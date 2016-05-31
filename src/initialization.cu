@@ -14,6 +14,7 @@
 
 /********************************* Methods ********************************/
 
+
 /**
  * @brief Allocates memory for parents and children. Also, they are initialized
  * @param totalIndividuals The total number of individuals (parents + children)
@@ -52,5 +53,9 @@ individual* initPopulation(const int totalIndividuals, const unsigned char nObje
 		}
 	}
 
+
+	
+
 	return pop;
+	/* ------- */
 }

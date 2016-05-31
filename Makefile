@@ -181,7 +181,7 @@ ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDESCUDA  := -I../../common/inc 
+INCLUDESCUDA  := -I ./common/inc 
 # Includes for hpmoonCUDA
 INCLUDES = $(INC)/tinyxml2.h $(INC)/xml.h $(INC)/bd.h $(INC)/initialization.h $(INC)/evaluation.h $(INC)/sort.h $(INC)/tournament.h $(INC)/crossover.h
 OBJECTS = $(OBJ)/tinyxml2.o $(OBJ)/xml.o $(OBJ)/bd.o $(OBJ)/individual.o $(OBJ)/initialization.o $(OBJ)/evaluation.o $(OBJ)/sort.o $(OBJ)/tournament.o $(OBJ)/crossover.o $(OBJ)/main.o

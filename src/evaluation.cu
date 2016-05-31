@@ -14,8 +14,20 @@
 #include <stdlib.h> // malloc, rand...
 #include <string.h> // memset...
 #include <math.h> // sqrt, INFINITY...
+#include <curand_kernel.h>
 
 /********************************* Methods ********************************/
+
+__global__ void cudaRand(double *d_out)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    curandState state;
+    curand_init((unsigned long long)clock() + i, 0, 0, &state);
+
+    d_out[i] = curand_uniform_double(&state);
+}
+
+
 
 /**
  * @brief K-means algorithm which minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS)
@@ -290,8 +302,8 @@ void getCentroids(int *selInstances, const int nInstances) {
 			exists = false;
 
 			// Look if the generated index already exists
-			for (int kk = 0; kk < k && !exists; ++kk) {
-				exists = (randomInstance == selInstances[kk]);
+			for (int j = 0; j < k && !exists; ++j) {
+				exists = (randomInstance == selInstances[j]);
 			}
 		} while (exists);
 

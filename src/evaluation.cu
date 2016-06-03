@@ -38,25 +38,61 @@ static inline int nextPowerOfTwo(int n) {
 __global__ static
 void cuda_Euclidean(	float *dataBase, 
 						float *centroids,
-						unsigned char *member_chromosome,
-						float * distCentroids,
-						bool * d_mapping,
-						bool * newMapping,
-						int *d_samples_in_k)
+						unsigned char *member_chromosome,	
+						float * distCentroids,				//
+						bool * d_mapping,					//common
+						bool * newMapping,					//common
+						int *samples_in_k  				//cada hebra tiene uno
+					)
 {
-	extern __shared__ int sharedMemory[]; //Pa luego
+	extern __shared__ int sharedMemory[]; //main OPT point
 
-	d_totalDistances = KMEANS * N_INSTANCES;
+	const int d_totalDistances = KMEANS * N_INSTANCES;
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-	
+	bool converged = false;
+		for (int maxIter = 0; maxIter < MAX_ITER_KMEANS && !converged; ++maxIter) {
+			// The mapping table is cleaned in each iteration
+			if(idx < d_totalDistances){			//Works when number of threads >=  KMEANS * N_INSTANCES
+				newMapping[idx] = false;
+			}
+			if(idx < KMEANS){
+				samples_in_k[idx] = 0;
+			}
 
+//------------------------------SEGUIR TOCANDO ESTO-------------------------------------------
+			//A single thread executes the necessary work to compute an instance. Future improvements can me made. OPT
+			if(idx < N_INSTANCES){
+				float minDist = INFINITY;
+				int selectCentroid = -1;
+				int pos = N_FEATURES * idx;
 
+				for (int k = 0; k < KMEANS; ++k) {
+					float sum = 0.0f;
+					int posCentroids = k * N_FEATURES;
+					int posDistCentr = k * N_INSTANCES;
+					for (int f = 0; f < N_FEATURES; ++f) {
+						if (member_chromosome[f] & 1) {
+							//Multiple accesses to global memory. Better if they were in shared memory. OPT
+							sum += (dataBase[pos + f] - centroids[posCentroids + f]) * (dataBase[pos + f] - centroids[posCentroids + f]);
+						}
+					}//f
 
+					float euclidean = sqrt(sum);
+					distCentroids[posDistCentr + idx] = euclidean; //Access to global memory. OPT
+					if (euclidean < minDist) {
+						minDist = euclidean;
+						selectCentroid = k;
+					}
+				}//k
 
+				newMapping[(selectCentroid * N_INSTANCES) + idx] = true;
+				samples_in_k[selectCentroid]++;
+				__syncthreads();
+			}
 
-
-
+			__syncthreads();
+		}
 }
 
 
@@ -154,7 +190,7 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 
 
 		//Se decide el nº de bloques
-		const unsigned int numThreadsPerBlock = nextPowerOfTwo(N_INSTANCES);
+		const unsigned int numThreadsPerBlock = nextPowerOfTwo(KMEANS * N_INSTANCES);
 		const unsigned int numBlocks = (numThreadsPerBlock)/ (_ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount);
 		const unsigned int BlockSharedDataSize = N_INSTANCES * N_FEATURES * sizeof(float) +
 												 KMEANS * N_FEATURES * sizeof(float) +
@@ -173,10 +209,17 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 		checkCudaErrors(cudaMemcpy(d_member_chromosome, h_member_chromosome, size_3, cudaMemcpyHostToDevice));
 		checkCudaErrors(cudaMemcpy(d_distCentroids, distCentroids, size_4, cudaMemcpyHostToDevice));
 		checkCudaErrors(cudaMemcpy(d_mapping, mapping, size_5, cudaMemcpyHostToDevice));
-		checkCudaErrors(cudaMemcpy(d_newMapping, newMapping, size_5, cudaMemcpyHostToDevice));
-		checkCudaErrors(cudaMemcpy(d_samples_in_k, samples_in_k, size_6, cudaMemcpyHostToDevice));
+		//Values for this variables are initialized within the device kernel
+		//checkCudaErrors(cudaMemcpy(d_newMapping, newMapping, size_5, cudaMemcpyHostToDevice));
+		//checkCudaErrors(cudaMemcpy(d_samples_in_k, samples_in_k, size_6, cudaMemcpyHostToDevice));
 
-		//pollasEnCuda <<< numBlocks, numThreadsPerBlock, BlockSharedDataSize >>> (parametraasos)
+		cuda_Euclidean <<< numBlocks, numThreadsPerBlock, BlockSharedDataSize >>> (	d_dataBase, 
+																					d_centroids, 
+																					d_member_chromosome, 
+																					d_distCentroids, 
+																					d_mapping, 
+																					d_newMapping, 
+																					d_samples_in_k);
 
 		printf("\nnumThreadsPerBlock: %d", numThreadsPerBlock);
 		printf("\nnumBlocks: %d", numBlocks);
@@ -185,7 +228,7 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 
 		// To avoid poor performance, up to "MAX_ITER_KMEANS" iterations are executed
 		bool converged = false;
-		for (int maxIter = 0; maxIter < MAX_ITER_KMEANS && !converged; ++maxIter) {		//----------HACER UN COPÓN DE VECES ----//
+		for (int maxIter = 0; maxIter < MAX_ITER_KMEANS && !converged; ++maxIter) {
 
 			// The mapping table is cleaned in each iteration
 			for (int i = 0; i < totalDistances; ++i) {
@@ -262,6 +305,13 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 			}
 		}//convergence process
 		/* ZONA PARALELA*/
+		checkCudaErrors(cudaFree(d_dataBase));   //common to block
+		checkCudaErrors(cudaFree(d_centroids)); //common 
+		checkCudaErrors(cudaFree(d_member_chromosome));
+		checkCudaErrors(cudaFree(d_distCentroids));
+		checkCudaErrors(cudaFree(d_mapping));
+		checkCudaErrors(cudaFree(d_newMapping));
+		checkCudaErrors(cudaFree(d_samples_in_k));
 
 		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) ************* /
 

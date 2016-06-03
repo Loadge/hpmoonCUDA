@@ -27,6 +27,9 @@
 #include <cuda_runtime.h>
 #include <helper_cuda.h>
 
+#include <curand.h>
+#include <curand_kernel.h>
+
 
 using namespace tinyxml2;
 
@@ -330,7 +333,7 @@ int main(int argc, char** argv) {
 
 
 
-
+/* -- * /
 	clock_t
 		t_ini, 
 		t_fin, 
@@ -339,6 +342,13 @@ int main(int argc, char** argv) {
 		t_checkpoint3;
 	double ms;
 	t_ini = clock();
+/* -- */
+
+	float CUDAtime;
+    cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start, 0);
 
 
 	/********** Get the data base ***********/
@@ -349,16 +359,18 @@ int main(int argc, char** argv) {
 
 	// Data base normalization
 	normDataBase(h_dataBase, N_INSTANCES, N_FEATURES);
-	float d_dataBase;
-	size_t size = N_INSTANCES * N_FEATURES * sizeof(float);
-	checkCudaErrors(cudaMalloc((void **)&d_dataBase, size));
+	
 
 
-	t_checkpoint1 = clock();
-	ms = ((double) (t_checkpoint1 - t_ini) / CLOCKS_PER_SEC) * 1000.0;
-	fprintf(stdout, "Time for data base reading and normalization: %.16g\n", ms);
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&CUDAtime, start, stop);
+	printf("\nTime for data base reading and normalization:  %3.1f ms \n", CUDAtime);
+//	t_checkpoint1 = clock();
+//	ms = ((double) (t_checkpoint1 - t_ini) / CLOCKS_PER_SEC) * 1000.0;
+//	fprintf(stdout, "Time for data base reading and normalization: %.16g\n", ms);
 
-
+	cudaEventRecord(start, 0);
 	/********** Initialize the population and the individuals ***********/
 
 	srand((unsigned int) time(NULL));
@@ -368,10 +380,10 @@ int main(int argc, char** argv) {
 	// This way is better for the performance
 	individual *population = initPopulation(totalIndividuals, N_OBJECTIVES, N_FEATURES, maxFeatures);
 
-
-	t_checkpoint2 = clock();
-	ms = ((double) (t_checkpoint2 - t_checkpoint1) / CLOCKS_PER_SEC) * 1000.0;
-	fprintf(stdout, "Time for initialization of population: %.16g\n", ms);
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&CUDAtime, start, stop);
+	printf("\nTime for initialization of population:  %3.1f ms \n", CUDAtime);
 
 
 	/********** Multiobjective individual evaluation ***********/
@@ -380,19 +392,29 @@ int main(int argc, char** argv) {
 	int selInstances[KMEANS];
 	getCentroids(selInstances, N_INSTANCES);
 
-	t_checkpoint3 = clock();
-	ms = ((double) (t_checkpoint3 - t_checkpoint2) / CLOCKS_PER_SEC) * 1000.0;
-	fprintf(stdout, "Time for Multiobjective individual evaluation - Part 1: %.16g\n", ms);
+/* -- * /
+	for(int i=0; i<KMEANS;i++){printf("%d ", selInstances[i]);}printf("\n");
+/* -- */
+	printf("Ya he hecho los centroides\n");
+
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&CUDAtime, start, stop);
+	printf("\nTime for multiobjective individual evaluation - Centroids:  %3.1f ms \n", CUDAtime);
+
+	/* -- */
 
 	evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 
-	clock_t t_checkpoint4 = clock();
-	ms = ((double) (t_checkpoint4 - t_checkpoint3) / CLOCKS_PER_SEC) * 1000.0;
-	fprintf(stdout, "Time for Multiobjective individual evaluation - Part 2: %.16g\n", ms);
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&CUDAtime, start, stop);
+	printf("\nTime for multiobjective individual evaluation - Evaluation:  %3.1f ms \n", CUDAtime);
 
 
 	/********** Sort the population with the "Non-Domination-Sort" method *********** /
 
+	//CHUNGO ************************
 	int nIndFront0 = nonDominationSort(population, POPULATION_SIZE, N_OBJECTIVES, N_INSTANCES, N_FEATURES);
 
 

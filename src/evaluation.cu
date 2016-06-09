@@ -39,60 +39,220 @@ __global__ static
 void cuda_Euclidean(	float *dataBase, 
 						float *centroids,
 						unsigned char *member_chromosome,	
-						float * distCentroids,				//
-						bool * d_mapping,					//common
-						bool * newMapping,					//common
-						int *samples_in_k  				//cada hebra tiene uno
+						float * distCentroids,				//This data is common to every thread
+						bool * mapping,						//as long as you don't use shared memory,
+						bool * newMapping,					//which is highly recommended
+						bool * auxMapping,
+						int *samples_in_k,  		
+						bool * converged,
+						bool * convergedThread,
+						int * nvueltas
 					)
 {
-	extern __shared__ int sharedMemory[]; //main OPT point
-
-	const int d_totalDistances = KMEANS * N_INSTANCES;
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	int tx = threadIdx.x;
+	//int tx = threadIdx.x;
+	const int d_totalDistances = KMEANS * N_INSTANCES;
 
-	bool converged = false;
-		for (int maxIter = 0; maxIter < MAX_ITER_KMEANS && !converged; ++maxIter) {
+	//extern __shared__ int sharedMemory[]; //main OPT point
+	__shared__ float sharedCentroids [KMEANS * N_FEATURES];
+	__shared__ unsigned char sharedMember_chromosome [N_FEATURES];
+	__shared__ float sharedDistCentroids[d_totalDistances];
+	__shared__ bool  sharedMapping 		[d_totalDistances];
+	__shared__ bool  sharedNewMapping 	[d_totalDistances];
+	__shared__ bool  sharedAux 			[d_totalDistances];
+	__shared__ int sharedSamples_in_k [KMEANS];
+	__shared__ bool sharedConverged;
+
+	//Copiar valores a la memoria compartida;
+	if(tx < KMEANS * N_FEATURES){
+		sharedCentroids[tx] = centroids[tx];
+	}
+	__syncthreads();
+	if(tx < N_FEATURES){
+		sharedMember_chromosome[tx] = member_chromosome[tx];
+	}
+	__syncthreads();
+	if(tx < d_totalDistances){
+		sharedDistCentroids[tx] = distCentroids[tx];
+	}
+	__syncthreads();
+	if(tx < d_totalDistances){
+		sharedMapping[tx] = mapping[tx];
+	}
+	__syncthreads();
+	if(tx < d_totalDistances){
+		sharedNewMapping[tx]=false;
+		sharedMapping[tx]=false;
+	}
+	__syncthreads();
+	if(tx==0){
+		*(nvueltas)=0;
+		*converged= false;
+	}
+	__syncthreads();
+/* -- */
+		for (int maxIter = MAX_ITER_KMEANS-3; maxIter < MAX_ITER_KMEANS && (!(*converged==true)); ++maxIter) {
+			__syncthreads();
 			// The mapping table is cleaned in each iteration
-			if(idx < d_totalDistances){			//Works when number of threads >=  KMEANS * N_INSTANCES
-				newMapping[idx] = false;
-			}
-			if(idx < KMEANS){
-				samples_in_k[idx] = 0;
-			}
-
-//------------------------------SEGUIR TOCANDO ESTO-------------------------------------------
+			//Works when number of threads >=  KMEANS * N_INSTANCES
+				if(tx < d_totalDistances){
+					sharedNewMapping[tx] = false;
+				}
+				if(tx < KMEANS){
+					sharedSamples_in_k[idx] = 0;
+				}
+			__syncthreads();
 			//A single thread executes the necessary work to compute an instance. Future improvements can me made. OPT
-			if(idx < N_INSTANCES){
+			if(tx < N_INSTANCES){
 				float minDist = INFINITY;
 				int selectCentroid = -1;
-				int pos = N_FEATURES * idx;
+				int pos = N_FEATURES * tx;
 
 				for (int k = 0; k < KMEANS; ++k) {
 					float sum = 0.0f;
 					int posCentroids = k * N_FEATURES;
 					int posDistCentr = k * N_INSTANCES;
 					for (int f = 0; f < N_FEATURES; ++f) {
-						if (member_chromosome[f] & 1) {
+						if (sharedMember_chromosome[f] & 1) {
 							//Multiple accesses to global memory. Better if they were in shared memory. OPT
-							sum += (dataBase[pos + f] - centroids[posCentroids + f]) * (dataBase[pos + f] - centroids[posCentroids + f]);
+							sum += (dataBase[pos + f] - sharedCentroids[posCentroids + f]) * (dataBase[pos + f] - sharedCentroids[posCentroids + f]);
 						}
 					}//f
 
 					float euclidean = sqrt(sum);
-					distCentroids[posDistCentr + idx] = euclidean; //Access to global memory. OPT
+					sharedDistCentroids[posDistCentr + tx] = euclidean; //Access to global memory. OPT
 					if (euclidean < minDist) {
 						minDist = euclidean;
 						selectCentroid = k;
 					}
 				}//k
 
-				newMapping[(selectCentroid * N_INSTANCES) + idx] = true;
-				samples_in_k[selectCentroid]++;
-				__syncthreads();
-			}
-
+				sharedNewMapping[(selectCentroid * N_INSTANCES) + tx] = true;
+				sharedSamples_in_k[selectCentroid]++;
+			}//i
 			__syncthreads();
-		}
+			/* -- */
+			// Has the algorithm converged?
+			//A number of "KMEANS" threads check if the algorithm converged.
+			//They put their result in common in the next section
+/* -- */			
+			if(tx==0){
+				*(converged)=true;
+				for (int k = 0; k < KMEANS && ((*converged)==true); ++k) { 
+					int posMapping = k * N_INSTANCES;
+					for (int i = 0; i < N_INSTANCES && ((*converged)==true); ++i) {
+						if (sharedNewMapping[posMapping + i] != sharedMapping[posMapping + i]) {
+							*converged = false;
+						}
+					}
+				}
+			}
+			__syncthreads();
+/* -- * /
+//			if(tx==0){
+//				CUDAconverged=true;
+//				for(int i=0; i<KMEANS && CUDAconverged; i++){
+//					if(convergedThread[i]==false){
+//						CUDAconverged=false;
+//						convergedThread[0]=false;
+//					}
+//				}
+//			}
+//			//Al threads execute this
+//			CUDAconverged = convergedThread[0];
+			/* -- */
+/* -- */
+			if (!(*converged==true)) {
+				*nvueltas=(*nvueltas)+1;
+				// Update the position of the centroids
+				if(tx < KMEANS){
+					int posCentroids = tx * N_FEATURES;
+					int posMapping = tx * N_INSTANCES;
+					for (int f = 0; f < N_FEATURES; ++f) {
+						float sum = 0.0f;
+						if (sharedMember_chromosome[f] & 1) {
+							for (int i = 0; i < N_INSTANCES; ++i) {
+								if (sharedNewMapping[posMapping + i]) {
+									sum += dataBase[(N_FEATURES * i) + f];
+								}
+							}
+							sharedCentroids[posCentroids + f] = sum / sharedSamples_in_k[tx];
+						}
+					}
+				}
+
+/* -- */
+				// Swap mapping tables
+				if(tx < d_totalDistances){
+/* -- * /			__syncthreads();
+//					sharedNewMapping[tx]=true;
+//					__syncthreads();
+//					sharedMapping[tx]=true;
+//					__syncthreads();		
+/* -- * /
+//					for(int i=0; i<d_totalDistances; i++){
+//						sharedAux[i]=sharedNewMapping[i];
+//						sharedNewMapping[i]=sharedMapping[i];
+//						sharedMapping[i]=sharedAux[i];
+//					}
+/* -- */
+					auxMapping[tx]=sharedNewMapping[tx];
+					__syncthreads();
+					sharedNewMapping[tx]=sharedMapping[tx];
+					__syncthreads();
+					sharedMapping[tx]=auxMapping[tx];
+					__syncthreads();					
+/* -- */
+
+				}
+/* -- */
+			}//!converged
+/* -- * /
+			if(tx==0){
+				*nvueltas=*nvueltas+1;
+			}
+/* -- */
+		}//max-iter
+/* -- */
+		//Copiar los valores de salida
+	if(tx < KMEANS * N_FEATURES){
+		centroids[tx] = sharedCentroids[tx];
+	}
+	if(tx < d_totalDistances){
+		distCentroids[tx] = sharedDistCentroids[tx];
+	}
+/* -- */	
+	if(tx < d_totalDistances){
+		mapping[tx]	= sharedMapping[tx];
+	}
+/* -- */
+	if(tx < d_totalDistances){
+		newMapping[tx] = sharedNewMapping[tx];
+	}
+/* -- * /
+//	if(tx==0){
+//		for(int i=0; i<d_totalDistances; i++){
+//			mapping[i] = sharedMapping[i];
+//		}
+//		for(int i=0; i<d_totalDistances; i++){
+//			newMapping[i] = sharedNewMapping[i];
+//		}
+//	}
+/* -- */
+	if(tx < KMEANS){
+		samples_in_k[tx] = sharedSamples_in_k[tx];
+	}
+/* -- */
+/* -- * /
+	__syncthreads();
+	if(tx == 0){
+		*nvueltas=12;
+		*converged=true;
+	}
+	__syncthreads();
+/* -- */
+
 }
 
 
@@ -106,47 +266,40 @@ void cuda_Euclidean(	float *dataBase,
  */
 void kmeans(individual *pop, const int begin, const int end, const int *const selInstances, const float *const dataBase) {
 
-	bool *mapping = 	(bool*) malloc(KMEANS * N_INSTANCES * sizeof(bool));
-	bool *newMapping = 	(bool*) malloc(KMEANS * N_INSTANCES * sizeof(bool));
+	bool *mapping = (bool*) malloc(KMEANS * N_INSTANCES * sizeof(bool));
+	bool *newMapping = (bool*) malloc(KMEANS * N_INSTANCES * sizeof(bool));
 
 	// Evaluate all the individuals
 	for (int ind = begin; ind < end; ++ind) {
-		const int totalCoord = KMEANS * N_FEATURES;	//Nuevo para cada individuo
-		float centroids[KMEANS * N_FEATURES];		//Nuevo para cada individuo
+		const int totalCoord = KMEANS * N_FEATURES;
+		float centroids[KMEANS * N_FEATURES];
+
 		// The centroids will have the selected features of the individual
 		for (int k = 0; k < KMEANS; ++k) {
 			int posDataBase = selInstances[k] * N_FEATURES;
-			int posCentroids = k * N_FEATURES;
+			int posCentr = k * N_FEATURES;
 
 			for (int f = 0; f < N_FEATURES; ++f) {
 				if (pop[ind].chromosome[f] & 1) {
-					centroids[posCentroids + f] = dataBase[posDataBase + f];
+					centroids[posCentr + f] = dataBase[posDataBase + f];
 				}
 			}
 		}
 
-
-
 		/******************** Convergence process *********************/
 
 		// Initialize the array of minimum distances and the mapping table
-		const int totalDistances = KMEANS * N_INSTANCES;	//Number of times we calculate a distance
-		float distCentroids[KMEANS * N_INSTANCES];	//Distance of each instance to each centroid
-		int samples_in_k[KMEANS]; 					//Number of samples in each sector, formed by each centroid
+		const int totalDistances = KMEANS * N_INSTANCES;
+		float distCentroids[KMEANS * N_INSTANCES];
+		int samples_in_k[KMEANS];
 
 		// Initialize the mapping table
 		for (int i = 0; i < totalDistances; ++i) {
 			mapping[i] = false;
 		}
 
-
-
-
-
-
-
 		/* ZONA PARALELA*/
-
+/* -- */
 		cudaSetDevice(0);
         cudaDeviceProp deviceProp;
         cudaGetDeviceProperties(&deviceProp, 0);
@@ -154,33 +307,46 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 //        printf("\n%d procesadores!", _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount);
 
 		//Allocate device memory-------------------------------------------
-		float *d_dataBase;
-		size_t size_1 = N_INSTANCES * N_FEATURES * sizeof(float);
+		float *d_dataBase;	
+		size_t size_1 = N_INSTANCES * N_FEATURES * sizeof(float);			//NO VARÍA
 		checkCudaErrors(cudaMalloc((void **)&d_dataBase, size_1));
 
-		float *d_centroids;
+		float *d_centroids;	
 		size_t size_2 = KMEANS * N_FEATURES * sizeof(float);
 		checkCudaErrors(cudaMalloc((void **)&d_centroids, size_2));
 
-		unsigned char *d_member_chromosome;
-		size_t size_3 = N_FEATURES * sizeof(unsigned char);
+		unsigned char *d_member_chromosome;	
+		size_t size_3 = N_FEATURES * sizeof(unsigned char);					//NO VARÍA
 		checkCudaErrors(cudaMalloc((void **)&d_member_chromosome, size_3));
 
-		float * d_distCentroids;
+		float * d_distCentroids;	
 		size_t size_4 = KMEANS * N_INSTANCES * sizeof(float);
 		checkCudaErrors(cudaMalloc((void **)&d_distCentroids, size_4));
 
-		bool * d_mapping;
-		size_t size_5 = KMEANS * N_INSTANCES * sizeof(bool);
+		bool * d_mapping;		
+		size_t size_5 = KMEANS * N_INSTANCES * sizeof(bool);	
 		checkCudaErrors(cudaMalloc((void **)&d_mapping, size_5));
 
 		bool * d_newMapping;
 		checkCudaErrors(cudaMalloc((void **)&d_newMapping, size_5));
 
-		int *d_samples_in_k;
-		size_t size_6 = KMEANS * sizeof(int);
-		checkCudaErrors(cudaMalloc((void **)&d_samples_in_k, size_6));
+		bool * d_auxMapping;
+		checkCudaErrors(cudaMalloc((void **)&d_auxMapping, size_5));		
 
+		int *d_samples_in_k; 
+		size_t size_6 = KMEANS * sizeof(int);
+		checkCudaErrors(cudaMalloc((void **)&d_samples_in_k, size_6));	
+
+		//d_converged is meant for internal use in cuda function
+		bool * d_converged;
+		checkCudaErrors(cudaMalloc(&d_converged, sizeof(bool)));
+
+		int * d_nvueltas;
+		checkCudaErrors(cudaMalloc(&d_nvueltas, sizeof(int)));
+
+		bool * d_convergedThread;
+		size_t size_7 = KMEANS * sizeof(bool);
+		checkCudaErrors(cudaMalloc((void **)&d_convergedThread, size_7));
 
 		//Capture individual chromosome
 		unsigned char h_member_chromosome[N_FEATURES];
@@ -188,48 +354,45 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 			h_member_chromosome[i] = pop[ind].chromosome[i];
 		}
 
-
 		//Se decide el nº de bloques
 		const unsigned int numThreadsPerBlock = nextPowerOfTwo(KMEANS * N_INSTANCES);
-		const unsigned int numBlocks = (numThreadsPerBlock)/ (_ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount);
-		const unsigned int BlockSharedDataSize = N_INSTANCES * N_FEATURES * sizeof(float) +
-												 KMEANS * N_FEATURES * sizeof(float) +
-												 N_FEATURES * sizeof(unsigned char) +
-												 KMEANS * N_INSTANCES * sizeof(float) +
-												 KMEANS * N_INSTANCES * sizeof(bool) +
-												 KMEANS * N_INSTANCES * sizeof(bool) +
-												 KMEANS * sizeof(int);
-		if (BlockSharedDataSize > deviceProp.sharedMemPerBlock) {
-        	printf("WARNING: Your CUDA hardware has insufficient block shared memory.\n");
-    	}
-
+		const unsigned int numBlocks = 1+ (numThreadsPerBlock)/ (_ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount);
+		const unsigned int BlockSharedDataSize = N_INSTANCES * N_FEATURES * sizeof(float) +	//database
+												 KMEANS * N_FEATURES * sizeof(float) +		//centroids
+												 N_FEATURES * sizeof(unsigned char) +		//member_chromosome
+												 KMEANS * N_INSTANCES * sizeof(float) +		//distCentroids
+												 KMEANS * N_INSTANCES * sizeof(bool) +		//mapping
+												 KMEANS * N_INSTANCES * sizeof(bool) +		//newMapping
+												 KMEANS * N_INSTANCES * sizeof(bool) +		//d_auxMapping
+												 KMEANS * sizeof(int) +						//samples_in_k
+												 sizeof(bool)		  +						//converged
+												 KMEANS * sizeof(bool) +					//convergedThread
+												 sizeof(int);								//nvueltas
+		if (BlockSharedDataSize > deviceProp.sharedMemPerBlock) {printf("WARNING: Your CUDA hardware has insufficient block shared memory.\n");}
+/* -- */
 		//Copy values in device memory-------------------------------------
-		checkCudaErrors(cudaMemcpy(d_dataBase, dataBase, size_1, cudaMemcpyHostToDevice));   //common to block
-		checkCudaErrors(cudaMemcpy(d_centroids, centroids, size_2, cudaMemcpyHostToDevice)); //common 
+		checkCudaErrors(cudaMemcpy(d_dataBase, dataBase, size_1, cudaMemcpyHostToDevice));
+		checkCudaErrors(cudaMemcpy(d_centroids, centroids, size_2, cudaMemcpyHostToDevice));
 		checkCudaErrors(cudaMemcpy(d_member_chromosome, h_member_chromosome, size_3, cudaMemcpyHostToDevice));
-		checkCudaErrors(cudaMemcpy(d_distCentroids, distCentroids, size_4, cudaMemcpyHostToDevice));
-		checkCudaErrors(cudaMemcpy(d_mapping, mapping, size_5, cudaMemcpyHostToDevice));
-		//Values for this variables are initialized within the device kernel
+		//checkCudaErrors(cudaMemcpy(d_distCentroids, distCentroids, size_4, cudaMemcpyHostToDevice));
+		//checkCudaErrors(cudaMemcpy(d_mapping, mapping, size_5, cudaMemcpyHostToDevice));
+		//This variables are initialized within the device kernel
 		//checkCudaErrors(cudaMemcpy(d_newMapping, newMapping, size_5, cudaMemcpyHostToDevice));
 		//checkCudaErrors(cudaMemcpy(d_samples_in_k, samples_in_k, size_6, cudaMemcpyHostToDevice));
+/* -- */
+		
 
-		cuda_Euclidean <<< numBlocks, numThreadsPerBlock, BlockSharedDataSize >>> (	d_dataBase, 
-																					d_centroids, 
-																					d_member_chromosome, 
-																					d_distCentroids, 
-																					d_mapping, 
-																					d_newMapping, 
-																					d_samples_in_k);
-
+/* -- */
 		printf("\nnumThreadsPerBlock: %d", numThreadsPerBlock);
 		printf("\nnumBlocks: %d", numBlocks);
 		printf("\n Numerajo: %d", (_ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount));
 		printf("\n Se van a lanzar %d hebras repartidas en %d bloques", numThreadsPerBlock*numBlocks, numBlocks);
 
+/* -- */
+		int nVueltas=0;
 		// To avoid poor performance, up to "MAX_ITER_KMEANS" iterations are executed
 		bool converged = false;
-		for (int maxIter = 0; maxIter < MAX_ITER_KMEANS && !converged; ++maxIter) {
-
+		for (int maxIter = MAX_ITER_KMEANS-3; maxIter < MAX_ITER_KMEANS && !converged; ++maxIter) {
 			// The mapping table is cleaned in each iteration
 			for (int i = 0; i < totalDistances; ++i) {
 				newMapping[i] = false;
@@ -237,20 +400,18 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 			for (int i = 0; i < KMEANS; ++i) {
 				samples_in_k[i] = 0;
 			}
-
-
-
-
+/* -- */
+//			printf("\n -----[%d]----- Parte secuencial: calcular distancias Euclídeas", maxIter);
 			// Calculate all distances (Euclidean distance) between each instance and the centroids
 			for (int i = 0; i < N_INSTANCES; ++i) {
 				float minDist = INFINITY;
 				int selectCentroid = -1;
 				int pos = N_FEATURES * i;
-				for (int k = 0; k < KMEANS; ++k) {
+				for (int k = 0; k < KMEANS; ++k) {  //Para cada centroide
 					float sum = 0.0f;
-					int posCentroids = k * N_FEATURES;
-					int posDistCentr = k * N_INSTANCES;
-					for (int f = 0; f < N_FEATURES; ++f) {
+					int posCentroids = k * N_FEATURES;		//Nos situamos en el centroide
+					int posDistCentr = k * N_INSTANCES;		//Nos situamos en [	i1 i2 i3 i4 i5 i6 i7 ]
+					for (int f = 0; f < N_FEATURES; ++f) {	//					centroide 3
 						if (pop[ind].chromosome[f] & 1) {
 							sum += (dataBase[pos + f] - centroids[posCentroids + f]) * (dataBase[pos + f] - centroids[posCentroids + f]);
 						}
@@ -267,7 +428,8 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 				newMapping[(selectCentroid * N_INSTANCES) + i] = true;
 				samples_in_k[selectCentroid]++;
 			}//i
-
+/*  -- */
+//			printf("\n -----[%d]----- Parte secuencial: ver si ha convergido o no", maxIter);
 			// Has the algorithm converged?
 			converged = true;
 			for (int k = 0; k < KMEANS && converged; ++k) { 
@@ -278,9 +440,9 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 					}
 				}
 			}
-
+/* -- */
 			if (!converged) {
-
+				nVueltas++;
 				// Update the position of the centroids
 				for (int k = 0; k < KMEANS; ++k) {
 					int posCentroids = k * N_FEATURES;
@@ -297,22 +459,123 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 						}
 					}
 				}
-
+/* -- */
+//				printf("\n -----[%d]----- Parte secuencial: intercambiar mappings", maxIter);
 				// Swap mapping tables
 				bool *aux = newMapping;
 				newMapping = mapping;
 				mapping = aux;
-			}
-		}//convergence process
+/* -- */
+			}//!converged
+			printf("\nEl algoritmo converge: %d", converged);
+//			printf("\n -----[%d]----- Parte secuencial: Finalizó MAXITER", maxIter);	
+
+/* -- */
+//			nVueltas++;
+		}//maxiter----------------------------------------------------------------------------
+/* -- */
+
+		float gpu_distCentroids[KMEANS * N_INSTANCES];
+//		bool *gpu_newMapping = 	(bool*) malloc(KMEANS * N_INSTANCES * sizeof(bool));
+//		bool *gpu_mapping = 	(bool*) malloc(KMEANS * N_INSTANCES * sizeof(bool));
+		bool gpu_newMapping[KMEANS * N_INSTANCES];
+		bool gpu_mapping[KMEANS * N_INSTANCES];
+
+		int gpu_nvueltas;
+		bool gpu_converged;
+		int gpu_samples_in_k[KMEANS];
+		float gpu_centroids[KMEANS * N_FEATURES];
 		/* ZONA PARALELA*/
-		checkCudaErrors(cudaFree(d_dataBase));   //common to block
-		checkCudaErrors(cudaFree(d_centroids)); //common 
+		//**********************************************************************************************
+//		for (int maxIter = MAX_ITER_KMEANS-1; maxIter < MAX_ITER_KMEANS && !converged; ++maxIter) {
+
+			cuda_Euclidean <<< numBlocks, numThreadsPerBlock /*, BlockSharedDataSize */ >>> (	d_dataBase, 
+																		d_centroids, 
+																		d_member_chromosome, 
+																		d_distCentroids, 
+																		d_mapping, 
+																		d_newMapping,
+																		d_auxMapping, 
+																		d_samples_in_k,
+																		d_converged,
+																		d_convergedThread,
+																		d_nvueltas
+																		);
+			cudaDeviceSynchronize();
+
+			checkCudaErrors(cudaMemcpy(gpu_distCentroids, d_distCentroids, size_4, cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(gpu_newMapping, d_newMapping, size_5, cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(gpu_mapping, d_mapping, size_5, cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(gpu_samples_in_k, d_samples_in_k, size_6, cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(gpu_centroids, d_centroids, size_2, cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(&gpu_converged, d_converged, sizeof(bool), cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(&gpu_nvueltas, d_nvueltas, sizeof(int), cudaMemcpyDeviceToHost));
+
+			//checkCudaErrors(cudaMemcpy(gpu_converged, d_converged, sizeof(bool), cudaMemcpyDeviceToHost));
+//			cudaMemcpyFromSymbol(&gpu_converged, "CUDAconverged", sizeof(bool), 0, cudaMemcpyDeviceToHost);
+			//**********************************************************************************************
+/* -- * /
+		}//max iter
+			/* -- */
+			//Comprobación de si los resultados son iguales que en secuencial:
+			printf("\n Comprobando si todo está OC\n");
+
+			int tam_mapping = KMEANS * N_INSTANCES;
+			for(int i=0; i< KMEANS * N_FEATURES; i++){
+				if(gpu_distCentroids[i] != distCentroids[i]){
+					printf("\ndistCentroids[%d] no encaja con la versión secuencial.\n", i);
+				}else{
+					printf("\ndistCentroids[%d] encaja con la versión secuencial.\n", i);
+				}
+				printf("%f\n%f\n", distCentroids[i], gpu_distCentroids[i]);
+			}
+/* -- */
+			for(int i=0; i<KMEANS; i++){
+				if(gpu_samples_in_k[i] != samples_in_k[i]){
+					printf("\nsamples_in_k[%d] no encaja con la versión secuencial.\n", i);
+				}
+			}
+/* -- */
+			for(int i=0; i< KMEANS * N_FEATURES; i++){
+				if(gpu_centroids[i] != centroids[i]){
+					printf("\ncentroids[%d] no encaja con la versión secuencial.\n", i);
+				}else{
+					printf("\ncentroids[%d] encaja con la versión secuencial.\n", i);
+				}
+				printf("%f\n%f\n", centroids[i], gpu_centroids[i]);
+			}
+/* -- */
+			for(int i=0; i<tam_mapping; i++){
+				printf("\nmappings normales y de la gpu!\n");
+				printf("%d           %d\n%d           %d\n", mapping[i], gpu_mapping[i], newMapping[i], gpu_newMapping[i]);
+			}
+/* -- */
+			printf("\nConverged seq: %d, en gpu: %d\n", converged, gpu_converged);
+			printf("\nnVueltas seq: %d, en gpu: %d\n", nVueltas, gpu_nvueltas);
+			printf("\nPRUEBA PASADA TT");
+/* -- */
+
+		checkCudaErrors(cudaFree(d_dataBase));  
+		checkCudaErrors(cudaFree(d_centroids));
 		checkCudaErrors(cudaFree(d_member_chromosome));
 		checkCudaErrors(cudaFree(d_distCentroids));
 		checkCudaErrors(cudaFree(d_mapping));
 		checkCudaErrors(cudaFree(d_newMapping));
+		checkCudaErrors(cudaFree(d_auxMapping));
 		checkCudaErrors(cudaFree(d_samples_in_k));
+//		checkCudaErrors(cudaFree(d_converged));
+		checkCudaErrors(cudaFree(d_convergedThread));
+		checkCudaErrors(cudaFree(d_nvueltas));
+		
 
+/* -- * /
+		printf("\n -----[%d]----- Parte secuencial: calcular distancias Euclídeas", maxIter);
+		printf("\n -----[%d]----- Parte secuencial: ver si ha convergido o no", maxIter);
+		printf("\n -----[%d]----- Parte secuencial: intercambiar mappings", maxIter);
+		printf("\n -----[%d]----- Parte secuencial: Finalizó MAXITER", maxIter);
+/* -- */
+
+		printf("\n ---------- Parte secuencial: Empezando WCSS y ICSS");
 		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) ************* /
 
 		float sumWithin = 0.0f;
@@ -349,6 +612,7 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
 		// Third objective function (Number of selected features)
 		//pop[ind].fitness[2] = (float) nSelFeatures;
 /* -- */
+		printf("\n ---------- Parte secuencial: Terminado WCSS y ICSS");
 	}//for each individual
 
 	// Resources used are released

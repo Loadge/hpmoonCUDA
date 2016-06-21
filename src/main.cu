@@ -404,7 +404,7 @@ int main(int argc, char** argv) {
 
 	/* -- */
 
-	evaluation(population, 0, 1, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+	evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);

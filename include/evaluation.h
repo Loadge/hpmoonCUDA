@@ -28,6 +28,17 @@
 
 /********************************* Methods ********************************/
 
+
+/**
+ * @brief K-means algorithm which minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS)
+ * @param pop Current population
+ * @param begin The first individual to evaluate
+ * @param end The "end-1" position is the last individual to evaluate
+ * @param selInstances The instances choosen as initial centroids
+ * @param dataBase The database which will contain the instances and the features
+ */
+void gpu_kmeans(individual *pop, const int begin, const int end, const int *const selInstances, const float *const dataBase);
+
 /**
  * @brief K-means algorithm which minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS)
  * @param pop Current population
@@ -38,6 +49,18 @@
  */
 void kmeans(individual *pop, const int begin, const int end, const int *const selInstances, const float *const dataBase);
 
+/**
+ * @brief Evaluation of each individual
+ * @param pop Current population
+ * @param begin The first individual to evaluate
+ * @param end The "end-1" position is the last individual to evaluate
+ * @param dataBase The database which will contain the instances and the features
+ * @param nInstances The number of instances (rows) of the database
+ * @param nFeatures The number of features (columns) of the database
+ * @param nObjectives The number of objectives
+ * @param selInstances The instances choosen as initial centroids
+ */
+void gpu_evaluation(individual *pop, const int begin, const int end, const float *const dataBase, const int nInstances, const int nFeatures, const unsigned char nObjectives, const int *const selInstances);
 
 /**
  * @brief Evaluation of each individual

@@ -44,7 +44,7 @@ void cuda_WithinCluster(
 							const int * NextPowerTotalDistances,
 							bool * mapping,
 							float * distCentroids,
-							int * BlockSumWithin
+							float * BlockSumWithin
 							)
 {
 	const int d_totalDistances = KMEANS * N_INSTANCES;
@@ -84,7 +84,7 @@ void cuda_WithinCluster(
 	__syncthreads();
 	if(threadIdx.x == 0){
 		BlockSumWithin[blockIdx.x] = sharedBigDistCentroids[0];
-		BlockSumWithin[blockIdx.x] = 0;
+//		BlockSumWithin[blockIdx.x] = 0;
 	}
 		__syncthreads();
 /* -- */
@@ -329,7 +329,7 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 
 	int * d_NextPowerTotalDistances;
 	checkCudaErrors(cudaMalloc(&d_NextPowerTotalDistances, size_7));
-
+/* -- * /
 	bool * d_bigmapping;		
 	size_t size_8 = nextPowerTotalDistances * sizeof(bool);
 	checkCudaErrors(cudaMalloc((void **)&d_bigmapping, size_8));
@@ -340,6 +340,7 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 	float * d_bigdistCentroids;	
 	size_t size_9 = nextPowerTotalDistances * sizeof(float);
 	checkCudaErrors(cudaMalloc((void **)&d_bigdistCentroids, size_9));
+/* -- */
 
 	cudaSetDevice(0);
     cudaDeviceProp deviceProp;
@@ -347,8 +348,11 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 
 	//Se decide el nº de bloques
 
-	unsigned int numEuclideanThreadsPerBlock = nextPowerTotalDistances;
-	unsigned int numEuclideanBlocks = ((N_INSTANCES+totalDistances)-1) / deviceProp.maxThreadsPerBlock;
+//	unsigned int numEuclideanThreadsPerBlock = nextPowerTotalDistances;
+//	unsigned int numEuclideanBlocks = ((N_INSTANCES+totalDistances)-1) / deviceProp.maxThreadsPerBlock;
+
+	unsigned int numEuclideanThreadsPerBlock = 32;
+	unsigned int numEuclideanBlocks = ((N_INSTANCES+numEuclideanThreadsPerBlock)-1) / numEuclideanThreadsPerBlock;
 	if(numEuclideanBlocks==0){numEuclideanBlocks=1;}
 
 	//To support reduction, numConvergedThreadsPerBlock must be a power of two
@@ -417,8 +421,8 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		printf("\nReservando d_BlockConverged con %d posiciones\n", numConvergedBlocks);
 		checkCudaErrors(cudaMalloc((void **)&d_BlockConverged, size_11));
 
-		int * d_BlockSumWithin;
-		size_t size_12 = numWithinBlocks * sizeof(int);
+		float * d_BlockSumWithin;
+		size_t size_12 = numWithinBlocks * sizeof(float);
 		printf("\nReservando d_BlockSumWithin con %d posiciones\n", numWithinBlocks);
 		checkCudaErrors(cudaMalloc((void **)&d_BlockSumWithin, size_12));
 /* -- */
@@ -893,13 +897,6 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 
 		float gpu2_distCentroids[nextPowerTotalDistances];
 		bool gpu2_mapping[nextPowerTotalDistances];
-		//numhebras=NextPowerOfTwo(totalDistances)
-
-		//¿Necesario todo esto? Se supone que esto ya está en memoria de gpu.
-
-		float gpu_bigdistCentroids[nextPowerTotalDistances];
-		float bigdistCentroids 	  [nextPowerTotalDistances];
-
 /* -- * /
 		for(int i=0; i< nextPowerTotalDistances; i++){
 			if(i < totalDistances){
@@ -921,34 +918,34 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		for(int i=0; i< nextPowerTotalDistances; i++){
 			printf("\nbigdistCentroids[%d] = %f", i, bigdistCentroids[i]);
 		}
-/* -CHECK- * /
+/* -CHECK- */
 		numDist=0;
 		int numDist2=0;
-		checksum=0.0f;
-		gpu_checksum=0.0f;
+		float checksum=0.0f;
+		float gpu_checksum=0.0f;
 
 		for(int i=0; i< totalDistances; i++){
-			if(bigmapping[i] != gpu_mapping[i]){
+			if(mapping[i] != gpu_mapping[i]){
 				numDist++;
 //				printf("\nbigmapping[%d] no encaja con la versión secuencial.", i);
-//				printf("%d\n%d\n", bigmapping[i], gpu_mapping[i]);
+//				printf("%d\n%d\n", mapping[i], gpu_mapping[i]);
 			}else{
 //				printf("\nbigmapping[%d] encaja con la versión secuencial.", i);
 			}
 
-			if(bigdistCentroids[i] != distCentroids[i]){
+			if(distCentroids[i] != gpu_distCentroids[i]){
 				numDist2++;
 //				printf("\ndistCentroids[%d] no encaja con la versión secuencial.", i);
-//				printf("\n%f\n%f", distCentroids[i], bigdistCentroids[i]);
+//				printf("\n%f\n%f", distCentroids[i], gpu_distCentroids[i]);
 			}else{
 //				printf("\ndistCentroids[%d] encaja con la versión secuencial.", i);
 			}
 			checksum += distCentroids[i];
-			gpu_checksum += bigdistCentroids[i];
+			gpu_checksum += gpu_distCentroids[i];
 		}//56
-		printf("\nbigmapping mal: %d/%d \n", numDist, totalDistances);
-		printf("bigdistCentroids mal: %d/%d \n", numDist2, totalDistances);
-		printf("Suma de distCentroids: %f y en gpu: %f\n", checksum, gpu_checksum); printf("\nPenes");
+		printf("\ngpu_mapping mal: %d/%d \n", numDist, totalDistances);
+		printf("gpu_distCentroids mal: %d/%d \n", numDist2, totalDistances);
+		printf("Suma de distCentroids: %f y en gpu: %f\n", checksum, gpu_checksum);
 /* -CHECK- */
 
 		float gpu_SumWithin=0.0f;	//56
@@ -989,15 +986,15 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 															);
 			cudaDeviceSynchronize();
 
-			int gpu_SumWithin_2=0;
+			float gpu_SumWithin_2=0;
 
-			int gpu_BlockSumWithin[numWithinBlocks];
+			float gpu_BlockSumWithin[numWithinBlocks];
 //			for(int i=0; i < numWithinBlocks; i++){
 //				gpu_BlockSumWithin[i]=0;
 //			}
 			checkCudaErrors(cudaMemcpy(gpu_BlockSumWithin, 	 d_BlockSumWithin, 		size_12, cudaMemcpyDeviceToHost));
-			checkCudaErrors(cudaMemcpy(gpu_mapping,		 	d_mapping, 			size_5,  cudaMemcpyDeviceToHost));
-			checkCudaErrors(cudaMemcpy(gpu_bigdistCentroids, d_bigdistCentroids	, 	size_9,  cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(gpu_mapping,		 	 d_mapping, 			size_5,  cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(gpu_distCentroids, d_distCentroids	, 		size_4,  cudaMemcpyDeviceToHost));
 /* -CHECK- * /
 			for(int i=0; i< nextPowerTotalDistances; i++){
 				printf("\nbigdistCentroids[%d] = %f   bigmapping[%d] = %d ", i, gpu_bigdistCentroids[i], i, gpu_bigMapping[i]);
@@ -1005,7 +1002,7 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 /* -CHECK- */
 /* -- */
 			for(int i=0; i < numWithinBlocks; i++){
-				printf("\ngpu_BlockSumWithin[%d]= %d", i, gpu_BlockSumWithin[i]);
+				printf("\ngpu_BlockSumWithin[%d]= %f", i, gpu_BlockSumWithin[i]);
 				gpu_SumWithin_2 += gpu_BlockSumWithin[i];
 			}
 			printf("\n");
@@ -1013,7 +1010,7 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 
 //			printf("\nsumWithin: %f y en gpu: %f\n", sumWithin, gpu_SumWithin);
 			printf("\nsumWithin: %f y en gpu: %f", sumWithin, gpu_SumWithin);
-			printf("\nY en BlockSumWithin[0]: %d y en gpu2: %d\n", gpu_BlockSumWithin[0], gpu_SumWithin_2);
+			printf("\nY en BlockSumWithin[0]: %f y en gpu2: %f\n", gpu_BlockSumWithin[0], gpu_SumWithin_2);
 /* -- * /
 			printf("\nsumWithin en gpu: %f", gpu_SumWithin_2); //56
 /* -CHECK- * /

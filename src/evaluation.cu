@@ -39,25 +39,26 @@ static inline int nextPowerOfTwo(int n) {
 
 //53
 //nhebras: NextPowerOfTwo(N_INSTANCES)
-__global__ static //54
+__global__ static 
 void cuda_WithinCluster(
 							const int * NextPowerTotalDistances,
-							bool * bigmapping,
-							float * bigdistCentroids,
-							float * BlockSumWithin
+							bool * mapping,
+							float * distCentroids,
+							int * BlockSumWithin
 							)
 {
 	const int d_totalDistances = KMEANS * N_INSTANCES;
 	const int gpu_NextPowerTotalDistances = *(NextPowerTotalDistances);
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	int tx = threadIdx.x;
+/* -- */
 	__syncthreads();
 
     //  Copy global intermediate values into shared memory.
 	extern __shared__ float  sharedBigDistCentroids [];
 /* -- */
-	if(tx < gpu_NextPowerTotalDistances){
-		sharedBigDistCentroids[tx] = bigdistCentroids[idx] * bigmapping[idx];	//sharedBigDistCentroids[tx] = bigdistCentroids[i]
+	if(tx < d_totalDistances%blockDim.x){
+		sharedBigDistCentroids[tx] = distCentroids[idx] * mapping[idx];
 	}else{
 		sharedBigDistCentroids[tx] = 0;
 	}
@@ -80,7 +81,11 @@ void cuda_WithinCluster(
 	}
 
 /* -- */
+	__syncthreads();
+	if(threadIdx.x == 0){
 		BlockSumWithin[blockIdx.x] = sharedBigDistCentroids[0];
+		BlockSumWithin[blockIdx.x] = 0;
+	}
 		__syncthreads();
 /* -- */
 }
@@ -93,9 +98,6 @@ void cuda_WithinCluster(
 __global__ static 
 void cuda_Convergence_Check(		//51
 							const int * NextPowerTotalDistances,
-//							float *dataBase, 
-//							float *centroids,
-//							unsigned char *member_chromosome,
 							bool * mapping,
 							bool * newMapping,
 							bool * BlockConverged
@@ -108,7 +110,7 @@ void cuda_Convergence_Check(		//51
 	int tx = threadIdx.x;
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 /* -- */
-	if(tx < gpu_NextPowerTotalDistances){
+	if(tx < d_totalDistances){
 		sharedAllMappings[tx] = (mapping[idx] != newMapping[idx]) ? false : true;
 //		sharedAllMappings[tx] = false;
 	}else{
@@ -346,18 +348,18 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 	//Se decide el nº de bloques
 
 	unsigned int numEuclideanThreadsPerBlock = nextPowerTotalDistances;
-	unsigned int numEuclideanBlocks = ((N_INSTANCES+numEuclideanThreadsPerBlock)-1) / deviceProp.maxThreadsPerBlock;
+	unsigned int numEuclideanBlocks = ((N_INSTANCES+totalDistances)-1) / deviceProp.maxThreadsPerBlock;
 	if(numEuclideanBlocks==0){numEuclideanBlocks=1;}
 
 	//To support reduction, numConvergedThreadsPerBlock must be a power of two
 	unsigned int numConvergedThreadsPerBlock = nextPowerTotalDistances;
-	unsigned int numConvergedBlocks = ((totalDistances+numConvergedThreadsPerBlock)-1) / numConvergedThreadsPerBlock;
+	unsigned int numConvergedBlocks = ((totalDistances+totalDistances)-1) / deviceProp.maxThreadsPerBlock;
 	printf("\ndeviceProp.maxThreadsPerBlock: %d", deviceProp.maxThreadsPerBlock);
 	if(numConvergedBlocks==0){numConvergedBlocks=1;}
 
 	//To support reduction, numWithinThreadsPerBlock must be a power of two
 	unsigned int numWithinThreadsPerBlock = nextPowerTotalDistances;
-	unsigned int numWithinBlocks = ((totalDistances+numWithinThreadsPerBlock)-1) / numWithinThreadsPerBlock;
+	unsigned int numWithinBlocks = ((totalDistances+totalDistances)-1) / deviceProp.maxThreadsPerBlock;
 	if(numWithinBlocks==0){numWithinBlocks=1;}
 		if(numEuclideanBlocks > (_ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount)){
 			printf("WARNING: Your CUDA hardware has insufficient blocks!.\n");
@@ -415,8 +417,8 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		printf("\nReservando d_BlockConverged con %d posiciones\n", numConvergedBlocks);
 		checkCudaErrors(cudaMalloc((void **)&d_BlockConverged, size_11));
 
-		float * d_BlockSumWithin;
-		size_t size_12 = numWithinBlocks * sizeof(float);
+		int * d_BlockSumWithin;
+		size_t size_12 = numWithinBlocks * sizeof(int);
 		printf("\nReservando d_BlockSumWithin con %d posiciones\n", numWithinBlocks);
 		checkCudaErrors(cudaMalloc((void **)&d_BlockSumWithin, size_12));
 /* -- */
@@ -545,7 +547,7 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 /* -- */
 			nVueltas++;
 /* -- */
-		}//52maxiter----------------------------------------------------------------------------
+		}//52 maxiter----------------------------------------------------------------------------
 /* -- * /printf("\n ---------- Parte secuencial: Empezando WCSS y ICSS");
 		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) *************/
 
@@ -677,13 +679,8 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		//checkCudaErrors(cudaMemcpy(d_mapping, 	 gpu_mapping, size_5, cudaMemcpyHostToDevice));
 		//checkCudaErrors(cudaMemcpy(d_newMapping, gpu_newMapping, size_5, cudaMemcpyHostToDevice));
 
-/* -- */
-		bool bigmapping 	[nextPowerTotalDistances];
-		bool gpu_bigMapping	[nextPowerTotalDistances];
-		bool bigNewmapping 		[nextPowerTotalDistances];
-		bool gpu_bigNewMapping	[nextPowerTotalDistances];
+/* -- * /
 		for(int i=0; i< nextPowerTotalDistances; i++){
-/* -- */
 			if(i < totalDistances){
 				bigmapping[i] = gpu_mapping[i];
 //				bigmapping[i] = gpu_mapping[i];
@@ -694,7 +691,7 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 			}
 		}
 		for(int i=0; i< nextPowerTotalDistances; i++){
-/* -- */
+/* -- * /
 			if(i < totalDistances){
 				bigNewmapping[i] = gpu_newMapping[i];
 //				bigNewmapping[i] = gpu_newMapping[i];
@@ -704,20 +701,21 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 //				bigNewmapping[i] = false;
 			}
 		}
-		checkCudaErrors(cudaMemcpy(d_bigmapping, 		bigmapping, 	size_8, cudaMemcpyHostToDevice));
-		checkCudaErrors(cudaMemcpy(d_bigNewMapping, 	bigNewmapping,	size_8, cudaMemcpyHostToDevice));
+/* -- */
+		checkCudaErrors(cudaMemcpy(d_mapping, 	 gpu_mapping, 	 size_5, cudaMemcpyHostToDevice));
+		checkCudaErrors(cudaMemcpy(d_newMapping, gpu_newMapping, size_5, cudaMemcpyHostToDevice));
 		//51
 		cuda_Convergence_Check <<< numConvergedBlocks, numConvergedThreadsPerBlock, BlockSharedConvergedDataSize>>> (
 															d_NextPowerTotalDistances,
-															d_bigmapping,
-															d_bigNewMapping,
+															d_mapping,
+															d_newMapping,
 															d_BlockConverged
 															);
 		cudaDeviceSynchronize();
 
 		bool gpu_BlockConverged[numConvergedBlocks];
-		checkCudaErrors(cudaMemcpy(gpu_bigMapping,		 	d_bigmapping, 			size_8,  cudaMemcpyDeviceToHost));
-		checkCudaErrors(cudaMemcpy(gpu_bigNewMapping,		d_bigNewMapping, 		size_8,  cudaMemcpyDeviceToHost));
+		checkCudaErrors(cudaMemcpy(gpu_mapping,		 	d_mapping, 			size_5,  cudaMemcpyDeviceToHost));
+		checkCudaErrors(cudaMemcpy(gpu_newMapping,		d_newMapping, 		size_5,  cudaMemcpyDeviceToHost));
 		checkCudaErrors(cudaMemcpy(gpu_BlockConverged, 		d_BlockConverged, 		size_11, cudaMemcpyDeviceToHost));
 				
 //		printf("\nComprobando CONVERGENCE CHECK---------------------\n");
@@ -899,31 +897,18 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 
 		//¿Necesario todo esto? Se supone que esto ya está en memoria de gpu.
 
-		bool bigmapping 	[nextPowerTotalDistances];
-		bool gpu_bigMapping	[nextPowerTotalDistances];
 		float gpu_bigdistCentroids[nextPowerTotalDistances];
 		float bigdistCentroids 	  [nextPowerTotalDistances];
 
-		for(int i=0; i< nextPowerTotalDistances; i++){
-/* -- */	//54
-			if(i < totalDistances){
 /* -- * /
-				if(i >= totalDistances/2){
-					bigmapping[i] = true;
-				}else{
-					bigmapping[i] = false;
-				}
-/* -- */
+		for(int i=0; i< nextPowerTotalDistances; i++){
+			if(i < totalDistances){
 				bigmapping[i] = gpu_mapping[i];
-//				bigmapping[i] = mapping[i];
-//				bigmapping[i] = false;
 			}else{
-//				bigmapping[i] = true;
 			}
-/* -- */
+
 			if(i < totalDistances){
 				bigdistCentroids[i] = gpu_distCentroids[i];
-//				bigdistCentroids[i] = 1.0f;
 			}else{
 				bigdistCentroids[i] = 0;
 			}
@@ -972,10 +957,10 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 
 /* -- */	
 		//Para comprobar que mi idea es la puta polla
-		for (int k = 0; k < nextPowerTotalDistances; ++k) {
+		for (int k = 0; k < totalDistances; ++k) {
 			// Within-cluster
 //			printf("Añadiendo %f\n", bigdistCentroids[k] * bigmapping[k]);
-			gpu_SumWithin += bigdistCentroids[k] * bigmapping[k];
+			gpu_SumWithin += distCentroids[k] * mapping[k];
 		}
 
 //			printf("\ngpu_SumWithin vale: %f\n", gpu_SumWithin);
@@ -985,32 +970,33 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		}
 /* -CHECK- */
 
-		checkCudaErrors(cudaMemcpy(d_bigmapping, 		bigmapping, 		size_8, cudaMemcpyHostToDevice));
-		checkCudaErrors(cudaMemcpy(d_bigdistCentroids,	bigdistCentroids, 	size_9, cudaMemcpyHostToDevice));
-// para qué pollas!		checkCudaErrors(cudaMemcpy(d_mapping, 			mapping, 			size_5, cudaMemcpyHostToDevice));
+		checkCudaErrors(cudaMemcpy(d_mapping, 		gpu_mapping, 		size_5, cudaMemcpyHostToDevice));
+		checkCudaErrors(cudaMemcpy(d_distCentroids,	gpu_distCentroids, 	size_4, cudaMemcpyHostToDevice));
 /* -- */
 //54
 
 			// Within-cluster
 /* -- */			//53
-//			checkCudaErrors(cudaMemcpy(d_posCentroids, &gpu_posCentroids, size_7, cudaMemcpyHostToDevice));
-//			checkCudaErrors(cudaMemcpy(d_posDistCentr, &gpu_posDistCentr, size_7, cudaMemcpyHostToDevice));
 			checkCudaErrors(cudaMemcpy(d_NextPowerTotalDistances, &nextPowerTotalDistances, size_7, cudaMemcpyHostToDevice));
+
 			printf("\nLanzando %d hebras en %d bloques para within.", numWithinBlocks * numWithinThreadsPerBlock, numWithinBlocks);
 			printf("\nnumWithinThreadsPerBlock= %d  totalDistances= %d NextPowerTotalDistances= %d", numWithinThreadsPerBlock, totalDistances, nextPowerTotalDistances);
 			cuda_WithinCluster <<< numWithinBlocks, numWithinThreadsPerBlock, BlockSharedWithinDataSize >>> (	
 															d_NextPowerTotalDistances, 
-															d_bigmapping,
-															d_bigdistCentroids,
+															d_mapping,
+															d_distCentroids,
 															d_BlockSumWithin
 															);
 			cudaDeviceSynchronize();
 
-			float gpu_SumWithin_2=0.0f;
+			int gpu_SumWithin_2=0;
 
-			float gpu_BlockSumWithin[numWithinBlocks];
+			int gpu_BlockSumWithin[numWithinBlocks];
+//			for(int i=0; i < numWithinBlocks; i++){
+//				gpu_BlockSumWithin[i]=0;
+//			}
 			checkCudaErrors(cudaMemcpy(gpu_BlockSumWithin, 	 d_BlockSumWithin, 		size_12, cudaMemcpyDeviceToHost));
-			checkCudaErrors(cudaMemcpy(gpu_bigMapping,		 d_bigmapping, 			size_8,  cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(gpu_mapping,		 	d_mapping, 			size_5,  cudaMemcpyDeviceToHost));
 			checkCudaErrors(cudaMemcpy(gpu_bigdistCentroids, d_bigdistCentroids	, 	size_9,  cudaMemcpyDeviceToHost));
 /* -CHECK- * /
 			for(int i=0; i< nextPowerTotalDistances; i++){
@@ -1019,7 +1005,7 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 /* -CHECK- */
 /* -- */
 			for(int i=0; i < numWithinBlocks; i++){
-				printf("\ngpu_BlockSumWithin[%d]= %f", i, gpu_BlockSumWithin[i]);
+				printf("\ngpu_BlockSumWithin[%d]= %d", i, gpu_BlockSumWithin[i]);
 				gpu_SumWithin_2 += gpu_BlockSumWithin[i];
 			}
 			printf("\n");
@@ -1027,7 +1013,7 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 
 //			printf("\nsumWithin: %f y en gpu: %f\n", sumWithin, gpu_SumWithin);
 			printf("\nsumWithin: %f y en gpu: %f", sumWithin, gpu_SumWithin);
-			printf("\nY en BlockSumWithin[0]: %f y en gpu2: %f\n", gpu_BlockSumWithin[0], gpu_SumWithin_2);
+			printf("\nY en BlockSumWithin[0]: %d y en gpu2: %d\n", gpu_BlockSumWithin[0], gpu_SumWithin_2);
 /* -- * /
 			printf("\nsumWithin en gpu: %f", gpu_SumWithin_2); //56
 /* -CHECK- * /
@@ -1100,11 +1086,12 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		//pop[ind].fitness[2] = (float) nSelFeatures;
 
 //		printf("\n ---------- Parte paralela: Terminado WCSS y ICSS");
+/* -- * /
 		checkCudaErrors(cudaFree(d_BlockSumWithin));
 		checkCudaErrors(cudaFree(d_BlockConverged));
 /* -- */
 	}//for each individual
-/* -- */
+/* -- * /
 	// Resources used are released
 	checkCudaErrors(cudaFree(d_dataBase));
 	checkCudaErrors(cudaFree(d_centroids));
@@ -1119,7 +1106,7 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 	checkCudaErrors(cudaFree(d_NextPowerTotalDistances));
 	checkCudaErrors(cudaFree(d_bigmapping));
 	checkCudaErrors(cudaFree(d_bigdistCentroids));
-
+/* -- */
 	free(mapping);
 	free(newMapping);
 

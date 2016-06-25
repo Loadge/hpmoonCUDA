@@ -53,28 +53,7 @@ void cuda_WithinCluster(
 	const int d_totalDistances = KMEANS * N_INSTANCES;
 	const int gpu_NextPowerTotalDistances = *(NextPowerTotalDistances);
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//	int tx = threadIdx.x;
 
-/* -- */
-//	__syncthreads();
-
-    //  Copy global intermediate values into shared memory.
-//	__shared__ float  sharedBigDistCentroids [d_totalDistances];
-/* -- * /
-	if(blockIdx.x != *(numBlocks)-1){
-		for(int i=threadIdx.x; i < d_totalDistances; i+= blockDim.x){
-				sharedBigDistCentroids[tx] = distCentroids[idx] * mapping[idx];
-		}
-	}else{
-		for(int i=threadIdx.x; i < d_totalDistances; i+= blockDim.x){
-			if(idx < d_totalDistances){
-				sharedBigDistCentroids[tx] = distCentroids[idx] * mapping[idx];
-			}else{
-				sharedBigDistCentroids[tx] = 0;
-			}
-		}
-	}
-/* -- */
 	//Specialize BlockReduce for type float
 	typedef cub::BlockReduce<float, BLOCK_SIZE> BlockReduceT;
 
@@ -84,14 +63,10 @@ void cuda_WithinCluster(
 	float result;
 	if(idx < gpu_NextPowerTotalDistances)
 		result = BlockReduceT(temp_storage_float).Sum(bigdistCentroids[idx]);
-/* -- */
 	__syncthreads();
 	if(threadIdx.x == 0){
-//		BlockSumWithin[blockIdx.x] = sharedBigDistCentroids[0];
 		BlockSumWithin[blockIdx.x] = result;
 	}
-	__syncthreads();
-/* -- */
 }
 
 

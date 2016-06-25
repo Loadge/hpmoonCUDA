@@ -74,34 +74,14 @@ void cuda_WithinCluster(
 			}
 		}
 	}
-/* -- * /
-	__syncthreads();
-	//Setup the initial value as 0 to sum properly.
-	if(tx==0){
-		sharedBigDistCentroids[d_totalDistances]= sharedBigDistCentroids[0];
-		sharedBigDistCentroids[0] = 0.0f;
-	}
-	__syncthreads();
-/* -- * /
-	//Final sum will be stored in sharedDistCentroids[0]
-	for(unsigned int s=blockDim.x/2; s>0; s>>=1){
-		if(tx < s){
-			sharedBigDistCentroids[tx] += sharedBigDistCentroids[tx+s];
-		}
-		__syncthreads(); 	
-	}
+	typedef cub::BlockReduce<float, BLOCK_SIZE> BlockReduceT;
+	__shared__ typename BlockReduceT::TempStorage temp_storage_float;
 
+	float result;
+	if(idx < gpu_NextPowerTotalDistances){
+		result = BlockReduceT(temp_storage_float).Sum(sharedBigDistCentroids[threadIdx]);
+	}
 /* -- */
-typedef cub::BlockReduce<float, BLOCK_SIZE> BlockReduceT;
-__shared__ typename BlockReduceT::TempStorage temp_storage;
-
-float result;
-if(idx < gpu_NextPowerTotalDistances){
-	result = BlockReduceT(temp_storage).Sum(sharedBigDistCentroids[tx]);
-}
-
-
-/* -- */	
 	__syncthreads();
 	if(threadIdx.x == 0){
 //		BlockSumWithin[blockIdx.x] = sharedBigDistCentroids[0];
@@ -118,27 +98,64 @@ if(idx < gpu_NextPowerTotalDistances){
 //Para reducción, hace falta nextpower de totalDistances, hace falta extern __shared__
 __global__ static 
 void cuda_Convergence_Check(		//51
+							int * numBlocks,
 							const int * NextPowerTotalDistances,
 							bool * mapping,
 							bool * newMapping,
-							bool * BlockConverged
+							int * BlockConverged
 							){
 /* -- */
 	const int gpu_NextPowerTotalDistances = *(NextPowerTotalDistances);
 	const int d_totalDistances = KMEANS * N_INSTANCES;
-	extern __shared__ bool  sharedAllMappings 	[];
+	extern __shared__ int  sharedAllMappings 	[];
 
 	int tx = threadIdx.x;
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
 /* -- */
+	//Put 1 or 0 depending on the convergence of the idx position, 
+	//Perfom a reduction on those numbers. If the final result is not equal to totalDistances, there is no convergence.
+	//We do this to leverage the use of CUBLAS.
+//	if(blockIdx.x != *(numBlocks)-1){
+/* -- * /
+		for(int i=threadIdx.x; i < d_totalDistances; i+= blockDim.x){
+				sharedAllMappings[tx] = (mapping[idx] != newMapping[idx]) ? 0 : 1;
+		}
+/* -- * /		
+	} /* -- * /  else{
+		for(int i=threadIdx.x; i < d_totalDistances; i+= blockDim.x){
+			if(idx < d_totalDistances){
+				sharedAllMappings[tx] = (mapping[idx] != newMapping[idx]) ? 0 : 1;
+			}else{
+				sharedAllMappings[tx] = 1;
+			}
+		}
+	}
+/* -- * /
+	typedef cub::BlockReduce<int, BLOCK_SIZE> BlockReduceT;
+	__shared__ typename BlockReduceT::TempStorage temp_storage;
+
+	int result;
+	if(idx < d_totalDistances){
+		result = BlockReduceT(temp_storage).Sum(sharedAllMappings[tx]);
+	}
+
+
+
+
+
+
+/* -- */
+
+/* -- * /
 	if(tx < d_totalDistances){
-		sharedAllMappings[tx] = (mapping[idx] != newMapping[idx]) ? false : true;
+		sharedAllMappings[tx] = 0;//(mapping[idx] != newMapping[idx]) ? 0 : 1;
 //		sharedAllMappings[tx] = false;
 	}else{
-		sharedAllMappings[tx] = true;
+		sharedAllMappings[tx] = 1;
 	}
 	__syncthreads();
-/* -- */
+/* -- * /
 	// Has the algorithm converged?
 	//Final sum will be stored in sharedDistCentroids[0]
 	for(unsigned int s=blockDim.x/2; s>0; s>>=1){
@@ -147,12 +164,12 @@ void cuda_Convergence_Check(		//51
 		}
 		__syncthreads(); 	
 	}
-/* -- */
+/* -- * /
 //		BlockConverged[blockIdx.x] = sharedAllMappings[0];
 //		BlockConverged[0] = sharedAllMappings[0];
 	__syncthreads();
 	if(threadIdx.x == 0){
-		BlockConverged[blockIdx.x] = sharedAllMappings[0];
+		BlockConverged[blockIdx.x] = result;
 	}
 	__syncthreads();
 /* -- */
@@ -380,14 +397,14 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 	if(numEuclideanBlocks==0){numEuclideanBlocks=1;}
 
 	//To support reduction, numConvergedThreadsPerBlock must be a power of two
-	unsigned int numConvergedThreadsPerBlock = nextPowerTotalDistances;
-	unsigned int numConvergedBlocks = ((totalDistances+totalDistances)-1) / deviceProp.maxThreadsPerBlock;
+	unsigned int numConvergedThreadsPerBlock = 128;
+	unsigned int numConvergedBlocks = ((totalDistances+totalDistances)-1) / numConvergedThreadsPerBlock;
 	printf("\ndeviceProp.maxThreadsPerBlock: %d", deviceProp.maxThreadsPerBlock);
 	if(numConvergedBlocks==0){numConvergedBlocks=1;}
 
 	//To support reduction, numWithinThreadsPerBlock must be a power of two
 	unsigned int numWithinThreadsPerBlock = 128;
-	unsigned int numWithinBlocks = ((nextPowerTotalDistances+nextPowerTotalDistances)-1) / numWithinThreadsPerBlock;
+	unsigned int numWithinBlocks = ((totalDistances+totalDistances)-1) / numWithinThreadsPerBlock;
 	if(numWithinBlocks==0){numWithinBlocks=1;}
 		if(numEuclideanBlocks > (_ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount)){
 			printf("WARNING: Your CUDA hardware has insufficient blocks!.\n");
@@ -401,10 +418,10 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 														 0;
 
 		long unsigned int BlockSharedConvergedDataSize = 
-														 nextPowerTotalDistances * sizeof(bool) +	//sharedMapping
+														 numConvergedThreadsPerBlock * sizeof(int) +	//sharedMapping
 														 0;
 		long unsigned int BlockSharedWithinDataSize = 
-														 nextPowerTotalDistances * sizeof(float) +	//sharedBigDistCentroids
+														 numWithinThreadsPerBlock * sizeof(float) +	//sharedBigDistCentroids
 														 0;
 /* -- */
 		if (BlockSharedConvergedDataSize > deviceProp.sharedMemPerBlock) {printf("WARNING: Your CUDA hardware has insufficient block shared memory.\n");}
@@ -440,8 +457,8 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 			h_member_chromosome[i] = pop[ind].chromosome[i];
 		}
 
-		bool * d_BlockConverged;
-		size_t size_11 = numConvergedBlocks * sizeof(bool);
+		int * d_BlockConverged;
+		size_t size_11 = numConvergedBlocks * sizeof(int);
 		printf("\nReservando d_BlockConverged con %d posiciones\n", numConvergedBlocks);
 		checkCudaErrors(cudaMalloc((void **)&d_BlockConverged, size_11));
 
@@ -731,10 +748,12 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		}
 /* -- */
 
+		checkCudaErrors(cudaMemcpy(d_numKernelThreads, &numConvergedThreadsPerBlock, size_7, cudaMemcpyHostToDevice));
 		checkCudaErrors(cudaMemcpy(d_mapping, 	 gpu_mapping, 	 size_5, cudaMemcpyHostToDevice));
 		checkCudaErrors(cudaMemcpy(d_newMapping, gpu_newMapping, size_5, cudaMemcpyHostToDevice));
 		//51
 		cuda_Convergence_Check <<< numConvergedBlocks, numConvergedThreadsPerBlock, BlockSharedConvergedDataSize>>> (
+															d_numKernelThreads,
 															d_NextPowerTotalDistances,
 															d_mapping,
 															d_newMapping,
@@ -742,16 +761,17 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 															);
 		cudaDeviceSynchronize();
 
-		bool gpu_BlockConverged[numConvergedBlocks];
+		int gpu_BlockConverged[numConvergedBlocks];
 		checkCudaErrors(cudaMemcpy(gpu_mapping,		 	d_mapping, 			size_5,  cudaMemcpyDeviceToHost));
 		checkCudaErrors(cudaMemcpy(gpu_newMapping,		d_newMapping, 		size_5,  cudaMemcpyDeviceToHost));
 		checkCudaErrors(cudaMemcpy(gpu_BlockConverged, 		d_BlockConverged, 		size_11, cudaMemcpyDeviceToHost));
 				
 //		printf("\nComprobando CONVERGENCE CHECK---------------------\n");
 		gpu_converged = true;
+		int sum=0;
 /* -- */
 		for(int i=0; i < numConvergedBlocks; i++){
-			if(!gpu_BlockConverged[i]){
+			if(gpu_BlockConverged[i] != BLOCK_SIZE ){
 					gpu_converged = false;
 			}
 //			printf("gpu_BlockConverged[%d]= %d\n", i, gpu_BlockConverged[i]);
@@ -1004,11 +1024,9 @@ void gpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		printf("\nLanzando %d hebras en %d bloques para within.", numWithinBlocks * numWithinThreadsPerBlock, numWithinBlocks);
 		printf("\nnumWithinThreadsPerBlock= %d  totalDistances= %d NextPowerTotalDistances= %d", numWithinThreadsPerBlock, totalDistances, nextPowerTotalDistances);
 
-		int numKernelThreads = numWithinThreadsPerBlock;
-
-		checkCudaErrors(cudaMemcpy(d_numKernelThreads, &numKernelThreads, size_7, cudaMemcpyHostToDevice));
+		checkCudaErrors(cudaMemcpy(d_numKernelThreads, &numWithinThreadsPerBlock, size_7, cudaMemcpyHostToDevice));
 //		checkCudaErrors(cudaMemcpy(d_numKernelThreads, &BLOCK_SIZE, size_7, cudaMemcpyHostToDevice));
-		
+
 //		cuda_WithinCluster <<< ((totalDistances+1)/BLOCK_SIZE), BLOCK_SIZE, ((totalDistances+1)/BLOCK_SIZE) * sizeof(float) >>> (
 		cuda_WithinCluster <<< numWithinBlocks, numWithinThreadsPerBlock, BlockSharedWithinDataSize >>> (
 														d_numKernelThreads,

@@ -1,7 +1,7 @@
 /**
  * @file evaluation.h
- * @author Juan José Escobar Pérez
- * @date 20/06/2015
+ * @author Miguel Sánchez Tello
+ * @date 26/06/2016
  * @brief Header file for the evaluation of the individuals
  *
  */
@@ -37,7 +37,7 @@
  * @param selInstances The instances choosen as initial centroids
  * @param dataBase The database which will contain the instances and the features
  */
-void gpu_kmeans(individual *pop, const int begin, const int end, const int *const selInstances, const float *const dataBase);
+void CUDA_kmeans(individual *pop, const int begin, const int end, const int *const selInstances, const float *const dataBase);
 
 /**
  * @brief K-means algorithm which minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS)
@@ -60,7 +60,7 @@ void kmeans(individual *pop, const int begin, const int end, const int *const se
  * @param nObjectives The number of objectives
  * @param selInstances The instances choosen as initial centroids
  */
-void gpu_evaluation(individual *pop, const int begin, const int end, const float *const dataBase, const int nInstances, const int nFeatures, const unsigned char nObjectives, const int *const selInstances);
+void CUDA_evaluation(individual *pop, const int begin, const int end, const float *const dataBase, const int nInstances, const int nFeatures, const unsigned char nObjectives, const int *const selInstances);
 
 /**
  * @brief Evaluation of each individual

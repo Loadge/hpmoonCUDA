@@ -1,7 +1,7 @@
 /**
  * @file main.cpp
- * @author Juan José Escobar Pérez
- * @date 15/06/2015
+ * @author Miguel Sánchez Tello
+ * @date 26/06/2016
  * @brief Multiobjective genetic algorithm
  *
  * Multiobjective genetic algorithm running on a general purpose processor
@@ -44,7 +44,6 @@ int main(int argc, char** argv) {
 
 
 	/********** Get the configuration data from the XML file ***********/
-
 	XMLDocument configDoc;
 	configDoc.LoadFile(argv[1]);
 	const char *dataBaseName = getDataBaseName(&configDoc);
@@ -56,7 +55,6 @@ int main(int argc, char** argv) {
 	const char *dataName = getDataName(&configDoc);
 	const char *plotName = getPlotName(&configDoc);
 	const char *imageName = getImageName(&configDoc);
-
 
 	/********** Check program restrictions ***********/
 
@@ -389,8 +387,8 @@ int main(int argc, char** argv) {
 	printf("\nTime for multiobjective individual evaluation - Evaluation:  %3.1f ms", CUDAtime);
 
 /* -- */
-//	gpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-	gpu_evaluation(population, 0, 1, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+//	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+	CUDA_evaluation(population, 0, 1, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
@@ -398,7 +396,7 @@ int main(int argc, char** argv) {
 	printf("\nTime for multiobjective individual evaluation - Evaluation:  %3.1f ms", CUDAtime);
 /* -- */
 
-	/********** Sort the population with the "Non-Domination-Sort" method *********** /
+	/********** Sort the population with the "Non-Domination-Sort" method ***********/
 
 	int nIndFront0 = nonDominationSort(population, POPULATION_SIZE, N_OBJECTIVES, N_INSTANCES, N_FEATURES);
 
@@ -408,7 +406,7 @@ int main(int argc, char** argv) {
 	printf("\nTime for sort the population with Non-Domination-Sort:  %3.1f ms", CUDAtime);
 
 
-	/********** Get the population quality (calculating the hypervolume) *********** /
+	/********** Get the population quality (calculating the hypervolume) ***********/
 
 	// The reference point will be (X_1 = 1.0, X_2 = 1.0, .... X_N_OBJECTIVES = 1.0)
 	double referencePoint[N_OBJECTIVES];
@@ -425,7 +423,7 @@ int main(int argc, char** argv) {
 	printf("\nTime for hypervolume:  %3.1f ms", CUDAtime);
 
 
-	/********** Start the evolution process *********** /
+	/********** Start the evolution process ***********/
 
 	const int poolSize = POPULATION_SIZE >> 1;
 	int pool[poolSize];
@@ -440,8 +438,8 @@ int main(int argc, char** argv) {
 
 		// Multiobjective individual evaluation
 		int lastChild = POPULATION_SIZE + nChildren;
-		gpu_evaluation(population, POPULATION_SIZE, lastChild, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 //		evaluation(population, POPULATION_SIZE, lastChild, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+        CUDA_evaluation(population, POPULATION_SIZE, lastChild, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 		
 		// The crowding distance of the parents is initialized again for the next nonDominationSort
 		for (int i = 0;  i < POPULATION_SIZE; ++i) {

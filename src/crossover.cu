@@ -1,7 +1,7 @@
 /**
  * @file crossover.cpp
- * @author Juan José Escobar Pérez
- * @date 29/06/2015
+ * @author Miguel Sánchez Tello
+ * @date 26/06/2016
  * @brief File with the necessary implementation to perform crossover between two individuals
  *
  */

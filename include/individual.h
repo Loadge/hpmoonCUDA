@@ -1,7 +1,7 @@
 /**
  * @file individual.h
- * @author Juan José Escobar Pérez
- * @date 17/06/2015
+ * @author Miguel Sánchez Tello
+ * @date 26/06/2016
  * @brief Header file containing the definition of the individuals
  *
  */

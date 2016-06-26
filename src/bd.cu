@@ -1,7 +1,7 @@
 /**
  * @file bd.cpp
- * @author Juan José Escobar Pérez
- * @date 15/06/2015
+ * @author Miguel Sánchez Tello
+ * @date 26/06/2016
  * @brief File with the necessary implementation to read and store the database
  *
  */

@@ -1,7 +1,7 @@
 /**
  * @file sort.h
- * @author Juan José Escobar Pérez
- * @date 26/06/2015
+ * @author Miguel Sánchez Tello
+ * @date 26/06/2016
  * @brief Header file for ordering individuals according to the "Pareto front" and the crowding distance
  *
  */

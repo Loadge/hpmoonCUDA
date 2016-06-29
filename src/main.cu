@@ -8,6 +8,8 @@
  *
  */
 
+const int BLOCK_SIZE=1024;
+
 /********************************* Includes ********************************/
 
 #include "tinyxml2.h"
@@ -318,21 +320,22 @@ int main(int argc, char** argv) {
     printf("Result = PASS\n");
 /* ----------------------------- */
 
+    const int totalDistances = KMEANS * N_INSTANCES;
+    unsigned int numEuclideanThreadsPerBlock = BLOCK_SIZE;
+    unsigned int numEuclideanBlocks = ((N_INSTANCES+numEuclideanThreadsPerBlock)-1) / numEuclideanThreadsPerBlock;
+    unsigned int numWithinThreadsPerBlock = BLOCK_SIZE;
+    unsigned int numWithinBlocks = ((totalDistances+totalDistances)-1) / BLOCK_SIZE;
+    printf("\n Euclidean - Se van a lanzar %d hebras repartidas en %d bloques.", numEuclideanThreadsPerBlock*numEuclideanBlocks, numEuclideanBlocks);
+    printf("\n Within    - Se van a lanzar %d hebras repartidas en %d bloques.", numWithinBlocks * numWithinThreadsPerBlock, numWithinBlocks);
 
-
-
-
-
-	clock_t t_ini, t_fin;
-	t_ini = clock();
-
-	float CUDAtime;
+    float CUDAtime;
     cudaEvent_t start, stop;
-	cudaEventCreate(&start);
+    cudaEventCreate(&start);
     cudaEventCreate(&stop);
     cudaEventRecord(start, 0);
 
-
+    clock_t t_ini, t_fin;
+    t_ini = clock();
 	/********** Get the data base ***********/
 
 	float h_dataBase[N_INSTANCES * N_FEATURES];
@@ -388,7 +391,7 @@ int main(int argc, char** argv) {
 
 /* -- */
 //	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-	CUDA_evaluation(population, 0, 1, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);

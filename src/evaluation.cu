@@ -23,7 +23,7 @@
 
 /********************************* Methods ********************************/
 
-const int BLOCK_SIZE=128;
+const int BLOCK_SIZE=1024;
 
 /**
  * @brief Given a integer, returns it's next power of two.
@@ -220,7 +220,7 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0);
 
-	unsigned int numEuclideanThreadsPerBlock = 128;
+	unsigned int numEuclideanThreadsPerBlock = BLOCK_SIZE;
 	unsigned int numEuclideanBlocks = ((N_INSTANCES+numEuclideanThreadsPerBlock)-1) / numEuclideanThreadsPerBlock;
 	if(numEuclideanBlocks==0){numEuclideanBlocks=1;}
 

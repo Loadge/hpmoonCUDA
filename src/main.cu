@@ -36,6 +36,18 @@ const int BLOCK_SIZE=1024;
 using namespace tinyxml2;
 
 
+
+const int N=1 << 20;
+
+__global__ void kernel(float *x, int n)
+{
+    int tid= threadIdx.x + blockIdx.x * blockDim.x;
+    for(int i=tid; i < n; i += blockDim.x * gridDim.x){
+        x[i] = sqrt(pow(3.14159, i));
+    }
+
+}
+
 /**
  * @brief Main program
  * @param argc The number of arguments of the program
@@ -336,6 +348,46 @@ int main(int argc, char** argv) {
 
     clock_t t_ini, t_fin;
     t_ini = clock();
+
+    /* PRUEBAS CON LOS STREAMS * /
+
+    const int num_streams = 128;
+    cudaStream_t streams[num_streams];
+
+    float * data[num_streams];
+
+    for(int i=0; i < num_streams; i++){
+        cudaStreamCreate(&streams[i]);
+        
+        cudaMalloc(&data[i], N*sizeof(float));
+
+        //launch one worker kernel per stream
+        kernel<<< 1, 64, 0, streams[i]>>>(data[i], N);
+
+        //launch a dummy kernel on the default stream
+    }
+
+    cudaDeviceReset();
+
+    /* PRUEBAS CON LOS STREAMS */
+
+
+
+
+
+
+
+
+
+
+
+    /* PRUEBAS CON LOS STREAMS */
+
+
+
+
+
+
 	/********** Get the data base ***********/
 
 	float h_dataBase[N_INSTANCES * N_FEATURES];
@@ -373,7 +425,7 @@ int main(int argc, char** argv) {
 
 	/********** Multiobjective individual evaluation ***********/
 
-	// Get the initial "KMEANS" centroids *********** /
+	// Get the initial "KMEANS" centroids ***********/
 	int selInstances[KMEANS];
 	getCentroids(selInstances, N_INSTANCES);
 
@@ -382,24 +434,34 @@ int main(int argc, char** argv) {
 	cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for multiobjective individual evaluation - Centroids:  %3.1f ms", CUDAtime);
 
-/* -- * /
-	evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&CUDAtime, start, stop);
-	printf("\nTime for multiobjective individual evaluation - Evaluation:  %3.1f ms", CUDAtime);
+    int nIndividuos=10;
+/* -- */
+//  cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+    cpu_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&CUDAtime, start, stop);
+    printf("\nTime for multiobjective individual evaluation - Evaluation - CPU:  %3.1f ms", CUDAtime);
+
+/* -- */
+//  cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+    test_cpu_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&CUDAtime, start, stop);
+    printf("\nTime for multiobjective individual evaluation - Evaluation - test:  %3.1f ms", CUDAtime);
 
 /* -- */
 //	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+	CUDA_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&CUDAtime, start, stop);
-	printf("\nTime for multiobjective individual evaluation - Evaluation:  %3.1f ms", CUDAtime);
+	printf("\nTime for multiobjective individual evaluation - Evaluation - GPU:  %3.1f ms", CUDAtime);
 /* -- */
 
-	/********** Sort the population with the "Non-Domination-Sort" method ***********/
+	/********** Sort the population with the "Non-Domination-Sort" method *********** /
 
 	int nIndFront0 = nonDominationSort(population, POPULATION_SIZE, N_OBJECTIVES, N_INSTANCES, N_FEATURES);
 
@@ -409,7 +471,7 @@ int main(int argc, char** argv) {
 	printf("\nTime for sort the population with Non-Domination-Sort:  %3.1f ms", CUDAtime);
 
 
-	/********** Get the population quality (calculating the hypervolume) ***********/
+	/********** Get the population quality (calculating the hypervolume) *********** /
 
 	// The reference point will be (X_1 = 1.0, X_2 = 1.0, .... X_N_OBJECTIVES = 1.0)
 	double referencePoint[N_OBJECTIVES];
@@ -426,7 +488,7 @@ int main(int argc, char** argv) {
 	printf("\nTime for hypervolume:  %3.1f ms", CUDAtime);
 
 
-	/********** Start the evolution process ***********/
+	/********** Start the evolution process *********** /
 
 	const int poolSize = POPULATION_SIZE >> 1;
 	int pool[poolSize];
@@ -475,7 +537,7 @@ int main(int argc, char** argv) {
 	generateGnuplot(dataName, plotName, imageName, population, nIndFront0, N_OBJECTIVES, referencePoint);
 
 
-	/********** Resources used are released ***********/
+	/********** Resources used are released *********** /
 
 	// The individuals (parents and children)
 	delete[] population;
@@ -487,5 +549,9 @@ int main(int argc, char** argv) {
     // profiled. Calling cudaDeviceReset causes all profile data to be
     // flushed before the application exits
     cudaDeviceReset();
+    
+/* -- */
     printf("\n");
+    return 0;
+    
 }

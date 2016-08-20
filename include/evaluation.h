@@ -47,7 +47,10 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
  * @param selInstances The instances choosen as initial centroids
  * @param dataBase The database which will contain the instances and the features
  */
-void kmeans(individual *pop, const int begin, const int end, const int *const selInstances, const float *const dataBase);
+void cpu_kmeans(individual *pop, const int begin, const int end, const int *const selInstances, const float *const dataBase);
+
+void test_cpu_kmeans(individual *pop, const int begin, const int end, const int *const selInstances, const float *const dataBase);
+void test_cpu_evaluation(individual *pop, const int begin, const int end, const float *const dataBase, const int nInstances, const int nFeatures, const unsigned char nObjectives, const int *const selInstances);
 
 /**
  * @brief Evaluation of each individual
@@ -73,7 +76,7 @@ void CUDA_evaluation(individual *pop, const int begin, const int end, const floa
  * @param nObjectives The number of objectives
  * @param selInstances The instances choosen as initial centroids
  */
-void evaluation(individual *pop, const int begin, const int end, const float *const dataBase, const int nInstances, const int nFeatures, const unsigned char nObjectives, const int *const selInstances);
+void cpu_evaluation(individual *pop, const int begin, const int end, const float *const dataBase, const int nInstances, const int nFeatures, const unsigned char nObjectives, const int *const selInstances);
 
 
 /**

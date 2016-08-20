@@ -296,7 +296,7 @@ VARS = $(POPSIZE) $(NFEATURES) $(NOBJECTIVES) $(NINSTANCES)
 # Target rules
 all: build
 
-build: $(LIB)/libhv.a $(BIN)/hpmoonCUDA #vectorAdd
+build: $(LIB)/libhv.a $(BIN)/hpmoonCUDA
 
 # Documentation
 documentation:
@@ -330,7 +330,7 @@ $(OBJ)/initialization.o: $(SRC)/initialization.cu $(INC)/initialization.h $(INC)
 	$(EXEC) $(NVCC) $(INCLUDESCUDA) $(CXXFLAGS) $(ALL_CCFLAGS) $(GENCODE_FLAGS) $(OPT) $(NFEATURES) $(NOBJECTIVES)  $(SRC)/initialization.cu -o $(OBJ)/initialization.o
 $(OBJ)/evaluation.o: $(SRC)/evaluation.cu $(INC)/evaluation.h $(INC)/individual.h $(INC)/hv.h
 	@echo "Making evaluation.o"
-	$(EXEC) $(NVCC) $(INCLUDESCUDA) $(CXXFLAGS) $(ALL_CCFLAGS) $(GENCODE_FLAGS) $(OPT) $(NFEATURES) $(NOBJECTIVES) $(NINSTANCES) $(SRC)/evaluation.cu -o $(OBJ)/evaluation.o
+	$(EXEC) $(NVCC) $(INCLUDESCUDA) --default-stream per-thread $(CXXFLAGS) $(ALL_CCFLAGS) $(GENCODE_FLAGS) $(OPT) $(NFEATURES) $(NOBJECTIVES) $(NINSTANCES) $(SRC)/evaluation.cu -o $(OBJ)/evaluation.o
 $(OBJ)/sort.o: $(SRC)/sort.cu $(INC)/sort.h $(INC)/individual.h
 	@echo "Making sort.o"
 	$(EXEC) $(NVCC) $(INCLUDESCUDA) $(CXXFLAGS) $(ALL_CCFLAGS) $(GENCODE_FLAGS) $(OPT) $(NFEATURES) $(NOBJECTIVES) $(SRC)/sort.cu -o $(OBJ)/sort.o
@@ -343,7 +343,7 @@ $(OBJ)/crossover.o: $(SRC)/crossover.cu $(INC)/crossover.h $(INC)/individual.h
 
 $(OBJ)/main.o: $(SRC)/main.cu $(INCLUDES)
 	@echo "Making obj/main.o"
-	$(EXEC) $(NVCC) $(INCLUDESCUDA) $(CXXFLAGS) $(ALL_CCFLAGS) $(GENCODE_FLAGS) $(OPT) $(VARS) $(SRC)/main.cu -o $(OBJ)/main.o
+	$(EXEC) $(NVCC) $(INCLUDESCUDA) --default-stream per-thread $(CXXFLAGS) $(ALL_CCFLAGS) $(GENCODE_FLAGS) $(OPT) $(VARS) $(SRC)/main.cu -o $(OBJ)/main.o
 
 #Necessary library
 $(LIB)/libhv.a:

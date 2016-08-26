@@ -434,17 +434,17 @@ int main(int argc, char** argv) {
 	cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for multiobjective individual evaluation - Centroids:  %3.1f ms", CUDAtime);
 
-    int nIndividuos=10;
+    int nIndividuos=POPULATION_SIZE;
 /* -- */
-//  cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-    cpu_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+    cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+//  cpu_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&CUDAtime, start, stop);
     printf("\nTime for multiobjective individual evaluation - Evaluation - CPU:  %3.1f ms", CUDAtime);
 
 /* -- */
-//  cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+//  test_cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
     test_cpu_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
@@ -452,8 +452,8 @@ int main(int argc, char** argv) {
     printf("\nTime for multiobjective individual evaluation - Evaluation - test:  %3.1f ms", CUDAtime);
 
 /* -- */
-//	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-	CUDA_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+//	CUDA_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);

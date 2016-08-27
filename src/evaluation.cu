@@ -146,8 +146,8 @@ void cuda_Convergence_Euclidean(
 			for (int f = 0; f < N_FEATURES; ++f) {
 //				if (member_chromosomes[posChromosome + f] & 1) {
 					//Multiple accesses to global memory. Better if they were in shared memory. OPT
-					sum += (dataBase[pos + f] - centroids[posIndCentroids + f]) * (dataBase[pos + f] - centroids[posIndCentroids + f]);
-					//sum += 1;
+					//sum += (dataBase[pos + f] - centroids[posIndCentroids + f]) * (dataBase[pos + f] - centroids[posIndCentroids + f]);
+					sum += 1;
 //				}
 			}//f
 
@@ -325,10 +325,10 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 
 			for (int f = 0; f < N_FEATURES; ++f) {
 //				printf("\nEscribiendo %f en la posición %d de host_centroids\n", dataBase[posDataBase + f], posCentr + f);
-				if (pop[ind].chromosome[f] & 1) {
+//				if (pop[ind].chromosome[f] & 1) {
 					host_centroids[posCentr + f] = dataBase[posDataBase + f];
 				}
-			}
+//			}
 		}
 //		printf("\n-----------");
 	}
@@ -500,18 +500,18 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 		cudaDeviceSynchronize();
 		
 		
-/* -- */
+/* -- * /
 		checkCudaErrors(cudaMemcpy(gpu_distCentroids,device_distCentroids, 	size_4, cudaMemcpyDeviceToHost));
 		checkCudaErrors(cudaMemcpy(gpu_newMapping, 	 device_newMapping,		size_5, cudaMemcpyDeviceToHost));
 		checkCudaErrors(cudaMemcpy(gpu_mapping, 	 device_mapping, 		size_5, cudaMemcpyDeviceToHost));
-/* -- */
+/* -- * /
 		for (int ind = begin; ind < end; ++ind) { 
 			int posIndCentroids =  ind * host_tamCentroids;
 			int posIndDistCentr =  ind * host_tamDistCentroids;
 			int posIndChromosome = ind * N_FEATURES;
 			int posIndMapping = ind * host_tamMapping;
 			int posIndSamples = ind * host_tamSamples;
-/* -- */
+/* -- * /
 
 			//Has the algorithm converged? We use CPU.
 			popConverged[ind] = true;	//53 GPU
@@ -530,7 +530,7 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 			printf("\n--------");
 			/* -- */
 
-/* -- */
+/* -- * /
 			if (!popConverged[ind]) {   
 				nVueltas++;
 				size = host_tamCentroids * sizeof(float);
@@ -559,13 +559,13 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 						}//if chromosome
 					}//for nfeatures
 				}//for KMEANS
-/* -- */
+/* -- * /
 				//New centroids, thanks to CPU work
 				size = host_tamCentroids * sizeof(float);
 				checkCudaErrors(cudaMemcpy(device_centroids + posIndCentroids, 	gpu_Indcentroids, size, 	cudaMemcpyHostToDevice));
-/* -- */
+/* -- * /
 			}//!converged
-/* -- */
+/* -- * /
 			//Anyone left to converge?
 			allConverged = true;
 			for(int i=0; i<host_tamPoblacion && allConverged; i++){
@@ -573,19 +573,18 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 					allConverged = false;
 				}
 			}
-/* -- */
+/* -- * /
 		}//ind Converged
 		// Swap GPU mapping tables 
 		checkCudaErrors(cudaMemcpy(device_mapping, 		gpu_newMapping, size_5, cudaMemcpyHostToDevice));
 		checkCudaErrors(cudaMemcpy(device_newMapping, 	gpu_mapping, size_5, 	cudaMemcpyHostToDevice));
 /* -- */
-//		allConverged=true;
+		allConverged=true;
 	}//while ninguno sin converger		//52
 	
 /* -- */
 
-		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) *************/
-/* -- */
+		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) ************* /
 	for (int ind = begin; ind < end; ++ind) {
 		int posIndCentroids =  ind * host_tamCentroids;
 		int posIndDistCentr =  ind * host_tamDistCentroids;
@@ -595,13 +594,11 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 
 		int posIndBigDist = ind * host_nextPowerTotalDistances;
 		int k=0;
-/* -- */
 		for (; k < host_totalDistances; ++k) { 	//50  GPU
 //				printf("\nSe va a sumar %f", gpu_distCentroids[posIndDistCentr + k] * gpu_mapping[posIndMapping + k]); 
 				gpu_bigdistCentroids[posIndBigDist + k] = gpu_distCentroids[posIndDistCentr + k] * gpu_mapping[posIndMapping + k];			
 //				gpu_bigdistCentroids[posIndBigDist + k] = 1.0f;
 		}
-/* -- */
 		for(; k < host_nextPowerTotalDistances; k++){
 //			gpu_bigdistCentroids[k] = 0.0f;
 			gpu_bigdistCentroids[posIndBigDist + k] = 0.0f;
@@ -613,11 +610,10 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 		for(int k=0; k < host_tamPoblacion * host_nextPowerTotalDistances; k++){
 //			printf("\n gpu_bigdistCentroids[%d]=%f", k, gpu_bigdistCentroids[k]);
 		}
-/* -CHECK-*/
+/* -CHECK-* /
 
 	checkCudaErrors(cudaMemcpy(device_bigdistCentroids,	gpu_bigdistCentroids, 	size_9, cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(device_NextPowerTotalDistances, &host_nextPowerTotalDistances, sizeof(int), cudaMemcpyHostToDevice));
-/* -- */	
+	checkCudaErrors(cudaMemcpy(device_NextPowerTotalDistances, &host_nextPowerTotalDistances, sizeof(int), cudaMemcpyHostToDevice));	
 	for (int ind = begin; ind < end; ++ind) {
 		checkCudaErrors(cudaMemcpy(device_ind, &ind, sizeof(int), cudaMemcpyHostToDevice));
 		checkCudaErrors(cudaMemcpy(device_numWithinBlocks, &numWithinBlocks, sizeof(int), cudaMemcpyHostToDevice));
@@ -642,7 +638,6 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 		}
 	}//ind
 	
-/* -- */
 	// Inter-cluster  //TODO: paralelize this if it's worth the effort
 	checkCudaErrors(cudaMemcpy(gpu_centroids, 		device_centroids,		size_2,  cudaMemcpyDeviceToHost));
 	for (int ind = begin; ind < end; ++ind) {
@@ -680,7 +675,6 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 
 //		checkCudaErrors(cudaFree(d_BlockSumWithin));
 		//WCSS and ICSS minimization process
-/* -- */
 	}//ind
 /* -- */
 	checkCudaErrors(cudaMemcpy(results_centroids,		device_centroids, 		size_2, cudaMemcpyDeviceToHost));
@@ -782,10 +776,10 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 
 			for (int f = 0; f < N_FEATURES; ++f) {
 //				printf("\nEscribiendo %f en la posición %d de host_centroids\n", dataBase[posDataBase + f], posCentr + f);
-				if (pop[ind].chromosome[f] & 1) {
+//				if (pop[ind].chromosome[f] & 1) {
 					centroids[posCentr + f] = dataBase[posDataBase + f];
 				}
-			}
+//			}
 		}
 //		printf("\n-----------");
 	}
@@ -846,7 +840,6 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 				float minDist = INFINITY;
 				int selectCentroid = -1;
 				int pos = N_FEATURES * i;
-				posIndMapping = (ind * host_tamMapping);
 
 				for (int k = 0; k < KMEANS; ++k) {
 					float sum = 0.0f;
@@ -855,8 +848,8 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 					int posIndChromosome = ind * N_FEATURES;
 					for (int f = 0; f < N_FEATURES; ++f) {
 //						if (pop[ind].chromosome[f] & 1) {
-							sum += (dataBase[pos + f] - centroids[posIndCentroids + f]) * (dataBase[pos + f] - centroids[posIndCentroids + f]);
-							//sum += 1;
+							//sum += (dataBase[pos + f] - centroids[posIndCentroids + f]) * (dataBase[pos + f] - centroids[posIndCentroids + f]);
+							sum += 1;
 //						}
 					}
 
@@ -872,7 +865,7 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 				samples_in_k[posIndSamples + selectCentroid]++;
 			}
 		}//ind Euclidean
-/* -- */
+/* -- * /
 		for (int ind = begin; ind < end; ++ind) {
 			int posIndCentroids =  ind * host_tamCentroids;
 			int posIndDistCentr =  ind * host_tamDistCentroids;
@@ -894,7 +887,7 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 					}
 				}
 			}
-/* -ALTERNATIVA 2 BUENA- */	
+/* -ALTERNATIVA 2 BUENA- * /	
 			//Has the algorithm converged? We use CPU.
 			popConverged[ind] = true;			//53 test
 			int sum=0;		
@@ -910,7 +903,7 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 			}
 			printf("\n--------");		
 			/* -- */
-/* -- */
+/* -- * /
 			if (!popConverged[ind]) {    
 				nVueltas++;
 
@@ -934,9 +927,9 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 						}
 					}
 				}
-/* -- */
+/* -- * /
 			}
-/* -- */
+/* -- * /
 			//Anyone left to converge?
 			allConverged = true;
 			for(int i=0; i<host_tamPoblacion && allConverged; i++){
@@ -944,17 +937,17 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 					allConverged = false;
 				}
 			}
-/* -- */
+/* -- * /
 		}//ind Converged
 		// Swap mapping tables
 		bool *aux = newMapping;
 		newMapping = mapping;
 		mapping = aux;
 /* -- */
-//		allConverged=true;
+		allConverged=true;
 	}//ninguno sin converger		//52
 
-		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) *************/
+		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) ************* /
 
 	float sumWithin[host_tamPoblacion];
 	float sumInter[host_tamPoblacion];
@@ -1014,13 +1007,12 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 	int auxSumaSamples=0;
 	int auxSumaMapping=0;
 	int auxSumaNewMapping=0;
-	for(int i=0; i<host_tamPoblacion * KMEANS*N_FEATURES; i++){
+	for(int i=0; i<host_tamPoblacion * host_tamCentroids; i++){
 		auxSumaCentroids += centroids[i];
 //		printf("\ntest centroids[%d]= %f", i, centroids[i]);
-	}
-	
+	}	
 	//Euclidean
-	for(int i=0; i<host_tamPoblacion * KMEANS*N_INSTANCES; i++){
+	for(int i=0; i<host_tamPoblacion * host_tamDistCentroids; i++){
 		auxSumaDist += distCentroids[i];
 //		printf("\ntest test_distCentroids[%d]= %f", i, distCentroids[i]);
 	}
@@ -1093,10 +1085,10 @@ void cpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 			int posCentr = k * N_FEATURES;
 
 			for (int f = 0; f < N_FEATURES; ++f) {
-				if (pop[ind].chromosome[f] & 1) {
+//				if (pop[ind].chromosome[f] & 1) {
 					centroids[posCentr + f] = dataBase[posDataBase + f];
 				}
-			}
+//			}
 		}
 
 		/******************** Convergence process *********************/
@@ -1151,7 +1143,7 @@ void cpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 				newMapping[(selectCentroid * N_INSTANCES) + i] = true;
 				samples_in_k[selectCentroid]++;
 			}
-/* -- */	
+/* -- * /	
 			// Has the algorithm converged?
 			converged = true;
 			for (int k = 0; k < KMEANS && converged; ++k) { 
@@ -1193,9 +1185,10 @@ void cpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 				mapping = aux;
 			}
 /* -- */
+			converged=true;
 	}//maxIter 	//52
 
-		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) *************/
+		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) ************* /
 
 		float sumWithin = 0.0f;
 		float sumInter = 0.0f;

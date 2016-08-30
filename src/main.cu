@@ -36,6 +36,22 @@ const int BLOCK_SIZE=1024;
 using namespace tinyxml2;
 
 
+/**
+ * @brief Given a integer, returns it's next power of two.
+ * @param n The initial number.
+ * @return Next power of two integer of n.
+ */
+static inline int nextPowerOfTwo(int n) {
+    n--;
+
+    n = n >>  1 | n;
+    n = n >>  2 | n;
+    n = n >>  4 | n;
+    n = n >>  8 | n;
+    n = n >> 16 | n;
+
+    return ++n;
+}
 
 const int N=1 << 20;
 
@@ -412,6 +428,9 @@ int main(int argc, char** argv) {
 
 	srand((unsigned int) time(NULL));
 	const int totalIndividuals = POPULATION_SIZE << 1;
+    const int host_totalDistances = KMEANS * N_INSTANCES;
+    const int host_nextPowerTotalDistances = nextPowerOfTwo(host_totalDistances);
+    printf("\nvalor de host_nextPowerTotalDistances= %d", host_nextPowerTotalDistances);
 
 	// Population will have the parents and children (left half and right half respectively
 	// This way is better for the performance
@@ -425,6 +444,7 @@ int main(int argc, char** argv) {
 
 	/********** Multiobjective individual evaluation ***********/
 
+    printf("\nvalor de host_nextPowerTotalDistances= %d", host_nextPowerTotalDistances);
 	// Get the initial "KMEANS" centroids ***********/
 	int selInstances[KMEANS];
 	getCentroids(selInstances, N_INSTANCES);
@@ -436,6 +456,7 @@ int main(int argc, char** argv) {
 
     int nIndividuos=POPULATION_SIZE;
 /* -- */
+    cudaEventRecord(start, 0);
     cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 //  cpu_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
     cudaEventRecord(stop, 0);
@@ -444,6 +465,7 @@ int main(int argc, char** argv) {
     printf("\nTime for multiobjective individual evaluation - Evaluation - CPU:  %3.1f ms", CUDAtime);
 
 /* -- */
+    cudaEventRecord(start, 0);
 //  test_cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
     test_cpu_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
     cudaEventRecord(stop, 0);
@@ -452,9 +474,9 @@ int main(int argc, char** argv) {
     printf("\nTime for multiobjective individual evaluation - Evaluation - test:  %3.1f ms", CUDAtime);
 
 /* -- */
+    cudaEventRecord(start, 0);
 	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 //	CUDA_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&CUDAtime, start, stop);
@@ -541,7 +563,9 @@ int main(int argc, char** argv) {
 
 	// The individuals (parents and children)
 	delete[] population;
-
+    
+/* -- */
+    printf("\n");
     // finish
     // cudaDeviceReset causes the driver to clean up all state. While
     // not mandatory in normal operation, it is good practice.  It is also
@@ -549,9 +573,6 @@ int main(int argc, char** argv) {
     // profiled. Calling cudaDeviceReset causes all profile data to be
     // flushed before the application exits
     cudaDeviceReset();
-    
-/* -- */
-    printf("\n");
     return 0;
     
 }

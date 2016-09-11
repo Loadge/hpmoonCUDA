@@ -351,20 +351,38 @@ int main(int argc, char** argv) {
 /* ----------------------------- */
 
     const int totalDistances = KMEANS * N_INSTANCES;
+
     unsigned int numEuclideanThreadsPerBlock = BLOCK_SIZE;
     unsigned int numEuclideanBlocks = ((N_INSTANCES+numEuclideanThreadsPerBlock)-1) / numEuclideanThreadsPerBlock;
 
     unsigned int numUpdateThreadsPerBlock = BLOCK_SIZE_2;
     unsigned int numUpdateBlocks = ((N_FEATURES+numUpdateThreadsPerBlock)-1) / numUpdateThreadsPerBlock;
-    unsigned int numWithinThreadsPerBlock = BLOCK_SIZE;
+    //unsigned int numEuclideanBlocks = 1;
+    if(numEuclideanBlocks==0){numEuclideanBlocks=1;}
+    if(numEuclideanBlocks==0){numEuclideanBlocks=1;}
 
+    //In order for CUBLAS to support reduction, numWithinThreadsPerBlock must be a power of two.
+    unsigned int numWithinThreadsPerBlock = BLOCK_SIZE;
     unsigned int numWithinBlocks = ((totalDistances+totalDistances)-1) / BLOCK_SIZE;
+
+    unsigned int numSwapThreadsPerBlock = BLOCK_SIZE;
+    unsigned int numSwapBlocks = ((totalDistances+totalDistances)-1) / BLOCK_SIZE;
+
+
     if(numEuclideanBlocks==0){numEuclideanBlocks=1;}
     if(numUpdateBlocks==0){numUpdateBlocks=1;}
+    if(numWithinBlocks==0){numWithinBlocks=1;}
+    if(numSwapBlocks==0){numSwapBlocks=1;}
 
+    const int totalIndividuals = POPULATION_SIZE << 1;
+    const int host_totalDistances = KMEANS * N_INSTANCES;
+    const int host_nextPowerTotalDistances = nextPowerOfTwo(host_totalDistances);
+
+    printf("\n Next Power Of Two of Total Distances= %d", host_nextPowerTotalDistances);
     printf("\n Euclidean - Se van a lanzar %d hebras repartidas en %d bloques.", numEuclideanThreadsPerBlock*numEuclideanBlocks,    numEuclideanBlocks);
+    printf("\n Update    - Se van a lanzar %d hebras repartidas en %d bloques.", numUpdateThreadsPerBlock   *numUpdateBlocks,       numUpdateBlocks);
+    printf("\n Swap      - Se van a lanzar %d hebras repartidas en %d bloques.", numSwapThreadsPerBlock   *numSwapBlocks,       numSwapBlocks);
     printf("\n Within    - Se van a lanzar %d hebras repartidas en %d bloques.", numWithinThreadsPerBlock   *numWithinBlocks,       numWithinBlocks);
-    printf("\n Update    - Se van a lanzar %d hebras repartidas en %d bloques.", numUpdateThreadsPerBlock   *numUpdateBlocks,       numWithinBlocks);
 
     float CUDAtime;
     cudaEvent_t start, stop;
@@ -395,10 +413,6 @@ int main(int argc, char** argv) {
 	/********** Initialize the population and the individuals ***********/
 
 	srand((unsigned int) time(NULL));
-	const int totalIndividuals = POPULATION_SIZE << 1;
-    const int host_totalDistances = KMEANS * N_INSTANCES;
-    const int host_nextPowerTotalDistances = nextPowerOfTwo(host_totalDistances);
-    printf("\nvalor de host_nextPowerTotalDistances= %d", host_nextPowerTotalDistances);
 
 	// Population will have the parents and children (left half and right half respectively
 	// This way is better for the performance
@@ -411,8 +425,6 @@ int main(int argc, char** argv) {
 
 
 	/********** Multiobjective individual evaluation ***********/
-
-    printf("\nvalor de host_nextPowerTotalDistances= %d", host_nextPowerTotalDistances);
 	// Get the initial "KMEANS" centroids ***********/
 	int selInstances[KMEANS];
     cudaEventRecord(start, 0);
@@ -422,7 +434,7 @@ int main(int argc, char** argv) {
 	cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for multiobjective individual evaluation - Centroids:  %3.1f ms", CUDAtime);
 
-/* -- * /
+/* -- */
     cudaEventRecord(start, 0);
 
     cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
@@ -438,7 +450,7 @@ int main(int argc, char** argv) {
     cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
     printf("\nTime for multiobjective individual evaluation - Evaluation - test:  %3.1f ms", CUDAtime);
 
-/* -- */
+/* -- * /
     cudaEventRecord(start, 0);
 
 	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
@@ -447,7 +459,7 @@ int main(int argc, char** argv) {
 	printf("\nTime for multiobjective individual evaluation - Evaluation - GPU:  %3.1f ms", CUDAtime);
 /* -- */
 
-	/********** Sort the population with the "Non-Domination-Sort" method *********** /
+	/********** Sort the population with the "Non-Domination-Sort" method ***********/
 
     cudaEventRecord(start, 0);
 
@@ -457,7 +469,7 @@ int main(int argc, char** argv) {
 	printf("\nTime for sort the population with Non-Domination-Sort:  %3.1f ms", CUDAtime);
 
 
-	/********** Get the population quality (calculating the hypervolume) *********** /
+	/********** Get the population quality (calculating the hypervolume) ***********/
 
     cudaEventRecord(start, 0);
 	// The reference point will be (X_1 = 1.0, X_2 = 1.0, .... X_N_OBJECTIVES = 1.0)
@@ -474,7 +486,7 @@ int main(int argc, char** argv) {
 	printf("\nTime for hypervolume:  %3.1f ms", CUDAtime);
 
 
-	/********** Start the evolution process *********** /
+	/********** Start the evolution process ***********/
 
     cudaEventRecord(start, 0);
 	const int poolSize = POPULATION_SIZE >> 1;

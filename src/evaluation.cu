@@ -672,7 +672,7 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 																		device_newSamples
 																		);
 			}
-/* -- * /			
+/* -- */			
 				for(int i=0; i< num_streams; i++){
 					cudaStreamCreate(&streams[i]);
 					//JUST 1 THREAD FUNCIONA BIEN
@@ -714,7 +714,7 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 /* -- */
 //			}//ind Euclidean, Converged and Update
 		cudaDeviceSynchronize();
-		checkCudaErrors(cudaMemcpy(host_popConverged, 	 device_popConverged, 		size_13, cudaMemcpyDeviceToHost));	
+//		checkCudaErrors(cudaMemcpy(host_popConverged, 	 device_popConverged, 		size_13, cudaMemcpyDeviceToHost));	
 
 		/* -- * /
 		for(int i=0; i<host_tamPoblacion; i++){

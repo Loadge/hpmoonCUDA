@@ -553,6 +553,9 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 	unsigned int numWithinThreadsPerBlock = BLOCK_SIZE;
 	unsigned int numWithinBlocks = ((host_totalDistances+host_totalDistances)-1) / BLOCK_SIZE;
 
+	unsigned int numSwapThreadsPerBlock = BLOCK_SIZE;
+	unsigned int numSwapBlocks = ((host_totalDistances+host_totalDistances)-1) / BLOCK_SIZE;
+
 	if(numWithinBlocks==0){numWithinBlocks=1;}
 	if(numEuclideanBlocks > (_ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount)){
 		printf("WARNING: Your CUDA hardware has insufficient blocks!.\n");
@@ -639,24 +642,25 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 //	}
 	while(!allConverged){
 		nVueltas++;
-		printf("\nnVueltas=%d", nVueltas);
+//		printf("\nnVueltas=%d", nVueltas);
 		// Evaluate all the individuals
 //		for (int ind = begin; ind < end; ++ind) {
-		for(int i=0; i< num_streams; i++){				//52 GPU
-//			cudaStreamCreate(&streams[i]);
-			//Aquí se corren todos los streams una vez. HACER
-//			kernel_2<<<1, 64, 0, streams[i]>>>(data[i], N);
-//			kernel_2<<<1, 1>>>(0, 0);
+			for(int i=0; i< num_streams; i++){				//52 GPU
+//				totalIndProcessed++;
+//				cudaStreamCreate(&streams[i]);
+				//Aquí se corren todos los streams una vez. HACER
+//				kernel_2<<<1, 64, 0, streams[i]>>>(data[i], N);
+//				kernel_2<<<1, 1>>>(0, 0);
 /* -- */
-			//checkCudaErrors(cudaMemcpy(device_ind, &ind, sizeof(int), cudaMemcpyHostToDevice));
-			checkCudaErrors(cudaMemcpy(device_ind, &i, sizeof(int), cudaMemcpyHostToDevice));
-			cudaStreamCreate(&streams[i]);
-			//Use GPU for the heavy computing part.
-//			printf("\nLanzando %d bloques con %d hebras cada uno en el stream %d", numEuclideanBlocks, numEuclideanThreadsPerBlock, i);
+				//checkCudaErrors(cudaMemcpy(device_ind, &ind, sizeof(int), cudaMemcpyHostToDevice));
+				checkCudaErrors(cudaMemcpy(device_ind, &i, sizeof(int), cudaMemcpyHostToDevice));
+				cudaStreamCreate(&streams[i]);
+				//Use GPU for the heavy computing part.
+//				printf("\nLanzando %d bloques con %d hebras cada uno en el stream %d", numEuclideanBlocks, numEuclideanThreadsPerBlock, i);
 /* -- */
-			//Funciona bien, sin problemas de concurrencia ni dimensionalidad
-			//RECORDAR AJUSTAR EL BLOCKSIZE
-			cuda_Convergence_Euclidean <<< numEuclideanBlocks, numEuclideanThreadsPerBlock, 0, streams[i] >>> (
+				//Funciona bien, sin problemas de concurrencia ni dimensionalidad
+				//RECORDAR AJUSTAR EL BLOCKSIZE
+					cuda_Convergence_Euclidean <<< numEuclideanBlocks, numEuclideanThreadsPerBlock, 0, streams[i] >>> (
 																		device_ind,
 																		device_tamPoblacion,
 																		device_dataBase, 
@@ -667,19 +671,24 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 																		device_samples_in_k,
 																		device_newSamples
 																		);
-
-/* -- * /
-			//JUST 1 THREAD FUNCIONA BIEN
-			cudaDeviceSynchronize();
-			cuda_Convergence_Check <<<1, 1, 0, streams[i]>>>( //50
+			}
+/* -- * /			
+				for(int i=0; i< num_streams; i++){
+					cudaStreamCreate(&streams[i]);
+					//JUST 1 THREAD FUNCIONA BIEN
+					cudaDeviceSynchronize();
+					cuda_Convergence_Check <<<1, 1, 0, streams[i]>>>( //50
 																		device_ind,
 																		device_mapping,
 																		device_newMapping,
 																		device_popConverged
 																		);
+				}																		
 /* -- */
-			cudaDeviceSynchronize();
-			cuda_Convergence_Update <<< numUpdateBlocks, numUpdateThreadsPerBlock, 0, streams[i]>>>(
+//				cudaDeviceSynchronize();
+			for(int i=0; i< num_streams; i++){
+				cudaStreamCreate(&streams[i]);
+				cuda_Convergence_Update <<< numUpdateBlocks, numUpdateThreadsPerBlock, 0, streams[i]>>>(
 																		device_ind,
 																		device_popConverged,
 																		device_centroids,
@@ -688,18 +697,23 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 																		device_newMapping,
 																		device_dataBase
 																		);
+			}
 /* -- */
-			cudaDeviceSynchronize();
-			cuda_Convergence_SwapMappings <<< 1, 1, 0, streams[i] >>>(
+//			cudaDeviceSynchronize();
+			for(int i=0; i< num_streams; i++){
+				cudaStreamCreate(&streams[i]);
+				cuda_Convergence_SwapMappings <<< numSwapBlocks, numSwapThreadsPerBlock, 0, streams[i] >>>(
 																		device_ind,
 																		device_popConverged,
 																		device_mapping,
 																		device_newMapping
 																		);
+			}
+//			cudaDeviceSynchronize();
 			
 /* -- */
-		}//ind Euclidean, Converged and Update
-//		cudaDeviceSynchronize();
+//			}//ind Euclidean, Converged and Update
+		cudaDeviceSynchronize();
 		checkCudaErrors(cudaMemcpy(host_popConverged, 	 device_popConverged, 		size_13, cudaMemcpyDeviceToHost));	
 
 		/* -- * /
@@ -815,7 +829,14 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 /* -- */
 	}//while ninguno sin converger		//52
 	
+//	cudaDeviceSynchronize();
+//	for(int i=0; i< num_streams; i++){
+//		cudaStreamDestroy(streams[i]);
+//	}
+	
 /* -- */
+	checkCudaErrors(cudaMemcpy(gpu_distCentroids,device_distCentroids, 	size_4, cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(gpu_mapping, 	 device_mapping, 		size_5, cudaMemcpyDeviceToHost));
 
 		/************ Minimize the within-cluster and maximize Inter-cluster sum of squares (WCSS and ICSS) *************/
 	for (int ind = begin; ind < end; ++ind) {
@@ -900,8 +921,8 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 		pop[ind].fitness[1] = gpu_SumInter[ind];
 
 
-		printf("\ngpu sumWithin[%d]=%f", ind, gpu_SumWithin_2[ind]);
-		printf("\ngpu sumInter[%d]=%f", ind, gpu_SumInter[ind]);
+//		printf("\ngpu sumWithin[%d]=%f", ind, gpu_SumWithin_2[ind]);
+//		printf("\ngpu sumInter[%d]=%f", ind, gpu_SumInter[ind]);
 
 		// Third objective function (Number of selected features)
 		//pop[ind].fitness[2] = (float) nSelFeatures;
@@ -916,7 +937,7 @@ void CUDA_kmeans(individual *pop, const int begin, const int end, const int *con
 	checkCudaErrors(cudaMemcpy(results_mapping,			device_mapping, 		size_5, cudaMemcpyDeviceToHost));
 	checkCudaErrors(cudaMemcpy(results_newMapping,		device_newMapping, 		size_5, cudaMemcpyDeviceToHost));
 
-/* -CHECK- */			//CHECKS
+/* -CHECK- * /			//CHECKS
 	float auxSumaCentroids=0;
 	float auxSumaDist=0;
 	int auxSumaSamples=0;
@@ -1233,7 +1254,7 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 	}//ind
 
 	
-/* -- */
+/* -- * /
 	float auxSumaCentroids=0;			//CHECKS
 	float auxSumaDist=0;
 	int auxSumaSamples=0;
@@ -1280,7 +1301,7 @@ void test_cpu_kmeans(individual *pop, const int begin, const int end, const int 
 	printf("\nvalor de host_nextPowerTotalDistances= %d", host_nextPowerTotalDistances);
 
 
-
+/* -- */
 	// Resources used are released
 	free(mapping);
 	free(newMapping);
@@ -1464,12 +1485,12 @@ void cpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		// Second objective function (Inter-cluster sum of squares (ICSS))
 		pop[ind].fitness[1] = sumInter;
 
-		printf("\ncpu sumWithin=%f", sumWithin);
-		printf("\ncpu sumInter=%f", sumInter);
+//		printf("\ncpu sumWithin=%f", sumWithin);
+//		printf("\ncpu sumInter=%f", sumInter);
 
 		// Third objective function (Number of selected features)
 		//pop[ind].fitness[2] = (float) nSelFeatures;
-/* -- */
+/* -- * /
 					//CHECKS
 		float auxSumaCentroids=0;	
 		float auxSumaDist=0;
@@ -1508,7 +1529,9 @@ void cpu_kmeans(individual *pop, const int begin, const int end, const int *cons
 		printf("\nCPU: Suma total de newMapping: %d", 	auxSumaNewMapping);
 		printf("\nCPU Contadoorrr: %d", contadorr);
 		printf("\nvalor de host_nextPowerTotalDistances= %d", host_nextPowerTotalDistances);
+/* -- */
 	}//for each individual
+/* -- */	
 	// Resources used are released
 	free(mapping);
 	free(newMapping);

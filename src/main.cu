@@ -9,6 +9,8 @@
  */
 
 const int BLOCK_SIZE=1024;
+const int BLOCK_SIZE_2=1024;
+
 
 /********************************* Includes ********************************/
 
@@ -351,10 +353,18 @@ int main(int argc, char** argv) {
     const int totalDistances = KMEANS * N_INSTANCES;
     unsigned int numEuclideanThreadsPerBlock = BLOCK_SIZE;
     unsigned int numEuclideanBlocks = ((N_INSTANCES+numEuclideanThreadsPerBlock)-1) / numEuclideanThreadsPerBlock;
+
+    unsigned int numUpdateThreadsPerBlock = BLOCK_SIZE_2;
+    unsigned int numUpdateBlocks = ((N_FEATURES+numUpdateThreadsPerBlock)-1) / numUpdateThreadsPerBlock;
     unsigned int numWithinThreadsPerBlock = BLOCK_SIZE;
+
     unsigned int numWithinBlocks = ((totalDistances+totalDistances)-1) / BLOCK_SIZE;
-    printf("\n Euclidean - Se van a lanzar %d hebras repartidas en %d bloques.", numEuclideanThreadsPerBlock*numEuclideanBlocks, numEuclideanBlocks);
-    printf("\n Within    - Se van a lanzar %d hebras repartidas en %d bloques.", numWithinBlocks * numWithinThreadsPerBlock, numWithinBlocks);
+    if(numEuclideanBlocks==0){numEuclideanBlocks=1;}
+    if(numUpdateBlocks==0){numUpdateBlocks=1;}
+
+    printf("\n Euclidean - Se van a lanzar %d hebras repartidas en %d bloques.", numEuclideanThreadsPerBlock*numEuclideanBlocks,    numEuclideanBlocks);
+    printf("\n Within    - Se van a lanzar %d hebras repartidas en %d bloques.", numWithinThreadsPerBlock   *numWithinBlocks,       numWithinBlocks);
+    printf("\n Update    - Se van a lanzar %d hebras repartidas en %d bloques.", numUpdateThreadsPerBlock   *numUpdateBlocks,       numWithinBlocks);
 
     float CUDAtime;
     cudaEvent_t start, stop;
@@ -365,45 +375,6 @@ int main(int argc, char** argv) {
     clock_t t_ini, t_fin;
     t_ini = clock();
 
-    /* PRUEBAS CON LOS STREAMS * /
-
-    const int num_streams = 128;
-    cudaStream_t streams[num_streams];
-
-    float * data[num_streams];
-
-    for(int i=0; i < num_streams; i++){
-        cudaStreamCreate(&streams[i]);
-        
-        cudaMalloc(&data[i], N*sizeof(float));
-
-        //launch one worker kernel per stream
-        kernel<<< 1, 64, 0, streams[i]>>>(data[i], N);
-
-        //launch a dummy kernel on the default stream
-    }
-
-    cudaDeviceReset();
-
-    /* PRUEBAS CON LOS STREAMS */
-
-
-
-
-
-
-
-
-
-
-
-    /* PRUEBAS CON LOS STREAMS */
-
-
-
-
-
-
 	/********** Get the data base ***********/
 
 	float h_dataBase[N_INSTANCES * N_FEATURES];
@@ -411,19 +382,16 @@ int main(int argc, char** argv) {
 	readDataBase(h_dataBase, dataBaseName, N_INSTANCES, N_FEATURES);
 
 	// Data base normalization
+    cudaEventRecord(start, 0);
+
 	normDataBase(h_dataBase, N_INSTANCES, N_FEATURES);
-	
 
-
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&CUDAtime, start, stop);
+	cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for data base reading and normalization:  %3.1f ms", CUDAtime);
 //	t_checkpoint1 = clock();
 //	ms = ((double) (t_checkpoint1 - t_ini) / CLOCKS_PER_SEC) * 1000.0;
 //	fprintf(stdout, "Time for data base reading and normalization: %.16g\n", ms);
 
-	cudaEventRecord(start, 0);
 	/********** Initialize the population and the individuals ***********/
 
 	srand((unsigned int) time(NULL));
@@ -434,11 +402,11 @@ int main(int argc, char** argv) {
 
 	// Population will have the parents and children (left half and right half respectively
 	// This way is better for the performance
+    cudaEventRecord(start, 0);
+
 	individual *population = initPopulation(totalIndividuals, N_OBJECTIVES, N_FEATURES, maxFeatures);
 
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&CUDAtime, start, stop);
+	cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for initialization of population:  %3.1f ms", CUDAtime);
 
 
@@ -447,71 +415,68 @@ int main(int argc, char** argv) {
     printf("\nvalor de host_nextPowerTotalDistances= %d", host_nextPowerTotalDistances);
 	// Get the initial "KMEANS" centroids ***********/
 	int selInstances[KMEANS];
+    cudaEventRecord(start, 0);
+
 	getCentroids(selInstances, N_INSTANCES);
 
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&CUDAtime, start, stop);
+	cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for multiobjective individual evaluation - Centroids:  %3.1f ms", CUDAtime);
 
-    int nIndividuos=POPULATION_SIZE;
-/* -- */
+/* -- * /
     cudaEventRecord(start, 0);
+
     cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-//  cpu_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&CUDAtime, start, stop);
+    
+    cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
     printf("\nTime for multiobjective individual evaluation - Evaluation - CPU:  %3.1f ms", CUDAtime);
 
-/* -- */
+/* -- * /
     cudaEventRecord(start, 0);
-//  test_cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-    test_cpu_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&CUDAtime, start, stop);
+
+    test_cpu_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+    
+    cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
     printf("\nTime for multiobjective individual evaluation - Evaluation - test:  %3.1f ms", CUDAtime);
 
 /* -- */
     cudaEventRecord(start, 0);
+
 	CUDA_evaluation(population, 0, POPULATION_SIZE, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-//	CUDA_evaluation(population, 0, nIndividuos, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&CUDAtime, start, stop);
+	
+    cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for multiobjective individual evaluation - Evaluation - GPU:  %3.1f ms", CUDAtime);
 /* -- */
 
 	/********** Sort the population with the "Non-Domination-Sort" method *********** /
 
+    cudaEventRecord(start, 0);
+
 	int nIndFront0 = nonDominationSort(population, POPULATION_SIZE, N_OBJECTIVES, N_INSTANCES, N_FEATURES);
 
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&CUDAtime, start, stop);
+	cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for sort the population with Non-Domination-Sort:  %3.1f ms", CUDAtime);
 
 
 	/********** Get the population quality (calculating the hypervolume) *********** /
 
+    cudaEventRecord(start, 0);
 	// The reference point will be (X_1 = 1.0, X_2 = 1.0, .... X_N_OBJECTIVES = 1.0)
 	double referencePoint[N_OBJECTIVES];
 	for (int i = 0; i < N_OBJECTIVES; ++i) {
 		referencePoint[i] = 1.0;
 	}
 
+
 	float popHypervolume = getHypervolume(population, nIndFront0, N_OBJECTIVES, referencePoint);
 	float auxHypervolume;
 
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&CUDAtime, start, stop);
+	cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for hypervolume:  %3.1f ms", CUDAtime);
 
 
 	/********** Start the evolution process *********** /
 
+    cudaEventRecord(start, 0);
 	const int poolSize = POPULATION_SIZE >> 1;
 	int pool[poolSize];
 	//for (int g = 0; g < nGenerations && popHypervolume > auxHypervolume; ++g) {
@@ -525,8 +490,8 @@ int main(int argc, char** argv) {
 
 		// Multiobjective individual evaluation
 		int lastChild = POPULATION_SIZE + nChildren;
-//		evaluation(population, POPULATION_SIZE, lastChild, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
-        CUDA_evaluation(population, POPULATION_SIZE, lastChild, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+        cpu_evaluation(population, POPULATION_SIZE, lastChild, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
+        //CUDA_evaluation(population, POPULATION_SIZE, lastChild, h_dataBase, N_INSTANCES, N_FEATURES, N_OBJECTIVES, selInstances);
 		
 		// The crowding distance of the parents is initialized again for the next nonDominationSort
 		for (int i = 0;  i < POPULATION_SIZE; ++i) {
@@ -544,9 +509,7 @@ int main(int argc, char** argv) {
 
 	popHypervolume = auxHypervolume;
 
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&CUDAtime, start, stop);
+	cudaEventRecord(stop, 0);cudaEventSynchronize(stop);cudaEventElapsedTime(&CUDAtime, start, stop);
 	printf("\nTime for evolution process:  %3.1f ms\n", CUDAtime);
 
 	// Finish the time measure
